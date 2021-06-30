@@ -18,7 +18,7 @@ conda activate Pyth38
 
 2. To clone the project to your own local machine:
 ```bash
-git clone https://github.com/sberbank-ai-lab/LightAutoML
+git clone https://github.com/Rishat-skoltech/LightAutoML_GPU.git
 cd LightAutoML
 ```
 
