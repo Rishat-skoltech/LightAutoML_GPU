@@ -7,6 +7,8 @@ import numpy as np
 import cupy as cp
 
 import pandas as pd
+import cudf
+
 from log_calls import record_history
 from pandas import Series, DataFrame
 from scipy import sparse
@@ -37,7 +39,7 @@ Dataset = TypeVar("Dataset", bound=LAMLDataset)
 
 @record_history(enabled=False)
 class NumpyDataset(LAMLDataset):
-    """Dataset, that contains info in np.ndarray/cp.ndarray format."""
+    """Dataset, that contains info in np.ndarray format."""
     # TODO: Checks here
     _init_checks = ()
     _data_checks = ()
@@ -109,19 +111,18 @@ class NumpyDataset(LAMLDataset):
         """
         # dtypes = list(set(map(lambda x: x.dtype, self.roles.values())))
         dtypes = list(set([i.dtype for i in self.roles.values()]))
-        #print(dtypes)
         self.dtype = np.find_common_type(dtypes, [])
 
         for f in self.roles:
             self._roles[f].dtype = self.dtype
-        #print("DTYPE is ", self.dtype)
+
         assert np.issubdtype(self.dtype, np.number), 'Support only numeric types in numpy dataset.'
 
         if self.data.dtype != self.dtype:
             self.data = self.data.astype(self.dtype)
 
     def __init__(self, data: Optional[DenseSparseArray], features: NpFeatures = (), roles: NpRoles = None,
-                 task: Optional[Task] = None, device: str = 'cpu', gpu_id: int = None, **kwargs: np.ndarray):
+                 task: Optional[Task] = None, **kwargs: np.ndarray):
         """Create dataset from numpy arrays.
 
         Args:
@@ -146,15 +147,7 @@ class NumpyDataset(LAMLDataset):
                 - dict.
 
         """
-        assert device in ['cpu', 'gpu'], "Support only either CPU or GPU."
-        self.device = device
-        self.gpu_id = None
-        if self.device == 'gpu':
-            self.gpu_id = gpu_id
-            assert type(self.gpu_id) is int, "GPU ID must be integer number."
-            cp.cuda.Device(self.gpu_id).use()
         self._initialize(task, **kwargs)
-        
         if data is not None:
             self.set_data(data, features, roles)
 
@@ -181,10 +174,7 @@ class NumpyDataset(LAMLDataset):
                 - dict.
 
         """
-        assert data is None or type(data) in [np.ndarray, cp.ndarray], 'Numpy/Cupy dataset support only np.ndarray/cp.ndarray features'
-        if self.device == 'gpu':
-            with cp.cuda.Device(self.gpu_id):
-                data = cp.asarray(data)
+        assert data is None or type(data) is np.ndarray, 'Numpy dataset support only np.ndarray features'
         super().set_data(data, features, roles)
         self._check_dtype()
 
@@ -199,11 +189,7 @@ class NumpyDataset(LAMLDataset):
             Stacked features array.
 
         """
-        if self.device == 'gpu':
-            with cp.cuda.Device(self.gpu_id):
-                return cp.hstack(datasets)
-        else:
-            return np.hstack(datasets)
+        return np.hstack(datasets)
 
     @staticmethod
     def _get_rows(data: np.ndarray, k: IntIdx) -> np.ndarray:
@@ -260,46 +246,38 @@ class NumpyDataset(LAMLDataset):
 
         """
         data[:, k] = val
-    def to_numpy(self) -> 'NumpyDataset':
-        return self.to_device('cpu')
 
-    def to_device(self, device=None, gpu_id=None) -> 'NumpyDataset/cupy':
+    def to_numpy(self) -> 'NumpyDataset':
         """
-        Method for data transfer from CPU to GPU or Vice Versa.
+        Empty method to convert to numpy.
 
         Returns:
-            Same Numpy or Cupy Dataset.
+            Same NumpyDataset.
 
         """
-        if device == 'cpu' and self.device == 'cpu':
-            return self
-        
-        if device==None:
-            device = 'cpu'
-
-        assert device in ['cpu', 'gpu'], "Support only either CPU or GPU."
-
-        if self.device == 'gpu' and device == 'cpu':
-            with cp.cuda.Device(self.gpu_id):
-                self.device = device
-                self.data = cp.asnumpy(self.data)
-            self.gpu_id = None
-
-        self.device = device
-        
-        if device == 'gpu':
-            if gpu_id == None:
-                gpu_id = 0
-                self.gpu_id = gpu_id
-            assert type(self.gpu_id)==int, "GPU ID must be integer number."
-            self.gpu_id = gpu_id
-            with cp.cuda.Device(self.gpu_id):
-                self.data = cp.asarray(self.data)
         return self
 
-    def to_csr(self) -> 'CSRSparseDataset':
+    def to_cupy(self):
         """
-        Convert to csr.
+        Convert to cupy.
+
+        Returns:
+            Cupy dataset
+        """
+        assert all([self.roles[x].name == 'Numeric' for x in self.features]), 'Only numeric data accepted in cupy dataset'
+        data = None if self.data is None else cp.asarray(self.data)
+
+        roles = self.roles
+        features = self.features
+        # target and etc ..
+        params = dict(((x, self.__dict__[x]) for x in self._array_like_attrs))
+        task = self.task
+
+        return CupyDataset(data, features, roles, task, **params)
+
+
+    def to_csr(self) -> 'CSRSparseDataset':
+        """Convert to csr.
 
         Returns:
             Same dataset in CSRSparseDatatset format.
@@ -313,11 +291,8 @@ class NumpyDataset(LAMLDataset):
         # target and etc ..
         params = dict(((x, self.__dict__[x]) for x in self._array_like_attrs))
         task = self.task
-        if self.device == 'gpu':
-            with cp.cuda.Device(self.gpu_id):
-                return CSRSparseDataset(cp.asnumpy(data), features, roles, task, **params)
-        else:
-            return CSRSparseDataset(data, features, roles, task, **params)
+
+        return CSRSparseDataset(data, features, roles, task, **params)
 
     def to_pandas(self) -> 'PandasDataset':
         """Convert to PandasDataset.
@@ -332,11 +307,8 @@ class NumpyDataset(LAMLDataset):
         # target and etc ..
         params = dict(((x, Series(self.__dict__[x])) for x in self._array_like_attrs))
         task = self.task
-        if self.device == 'gpu':
-            with cp.cuda.Device(self.gpu_id):
-                return PandasDataset(cp.asnumpy(data), roles, task, **params)
-        else:
-            return PandasDataset(data, roles, task, **params)
+
+        return PandasDataset(data, roles, task, **params)
 
     @staticmethod
     def from_dataset(dataset: Dataset) -> 'NumpyDataset':
@@ -348,6 +320,155 @@ class NumpyDataset(LAMLDataset):
         """
         return dataset.to_numpy()
 
+@record_history(enabled=True)
+class CupyDataset(NumpyDataset):
+
+    def _check_dtype(self):
+        """Check if dtype in ``.set_data`` is ok and cast if not.
+
+        Raises:
+            AttributeError: If there is non-numeric type in dataset.
+
+        """
+        # dtypes = list(set(map(lambda x: x.dtype, self.roles.values())))
+        dtypes = list(set([i.dtype for i in self.roles.values()]))
+        self.dtype = cp.find_common_type(dtypes, [])
+
+        for f in self.roles:
+            self._roles[f].dtype = self.dtype
+
+        assert cp.issubdtype(self.dtype, cp.number), 'Support only numeric types in numpy dataset.'
+
+        if self.data.dtype != self.dtype:
+            self.data = self.data.astype(self.dtype)
+
+    def __init__(self, data: Optional[DenseSparseArray], features: NpFeatures = (), roles: NpRoles = None,
+                 task: Optional[Task] = None, **kwargs: np.ndarray):
+        """Create dataset from numpy/cupy arrays.
+
+        Args:
+            data: 2d array of features.
+            features: Features names.
+            roles: Roles specifier.
+            task: Task specifier.
+            **kwargs: Named attributes like target, group etc ..
+
+        Note:
+            For different type of parameter feature there is different behavior:
+
+                - list, should be same len as data.shape[1]
+                - None - automatic set names like feat_0, feat_1 ...
+                - Prefix - automatic set names like Prefix_0, Prefix_1 ...
+
+            For different type of parameter feature there is different behavior:
+
+                - list, should be same len as data.shape[1].
+                - None - automatic set NumericRole(np.float32).
+                - ColumnRole - single role.
+                - dict.
+
+        """
+        self._initialize(task, **kwargs)
+        if data is not None:
+            self.set_data(data, features, roles)
+
+    def set_data(self, data: DenseSparseArray, features: NpFeatures = (), roles: NpRoles = None):
+        """Inplace set data, features, roles for empty dataset.
+
+        Args:
+            data: 2d np.ndarray/cp.array of features.
+            features: features names.
+            roles: Roles specifier.
+
+        Note:
+            For different type of parameter feature there is different behavior:
+
+                - List, should be same len as data.shape[1]
+                - None - automatic set names like feat_0, feat_1 ...
+                - Prefix - automatic set names like Prefix_0, Prefix_1 ...
+
+            For different type of parameter feature there is different behavior:
+
+                - List, should be same len as data.shape[1].
+                - None - automatic set NumericRole(cp.float32).
+                - ColumnRole - single role.
+                - dict.
+
+        """
+        assert data is None or type(data) is np.ndarray or type(data) is cp.ndarray, 'Cupy dataset support only np.ndarray/cp.ndarray features'
+
+        if type(data) == np.ndarray:
+            data = cp.asarray(data)
+        super(CupyDataset.__bases__[0], self).set_data(data, features, roles)
+        self._check_dtype()
+
+    @staticmethod
+    def _hstack(datasets: Union[Sequence[np.ndarray], Sequence[cp.ndarray]]) -> cp.ndarray:
+        """Concatenate function for cupy arrays.
+
+        Args:
+            datasets: Sequence of np.ndarray/cp.ndarray.
+
+        Returns:
+            Stacked features array.
+
+        """
+        return cp.hstack(cp.asarray(datasets))
+
+    def to_numpy(self):
+        """Convert to numpy.
+
+        Returns:
+            Numpy dataset
+        """
+
+        assert all([self.roles[x].name == 'Numeric' for x in self.features]), 'Only numeric data accepted in numpy dataset'
+        data = None if self.data is None else cp.asnumpy(self.data)
+
+        roles = self.roles
+        features = self.features
+        # target and etc ..
+        params = dict(((x, self.__dict__[x]) for x in self._array_like_attrs))
+        task = self.task
+
+        return NumpyDataset(data, features, roles, task, **params)
+
+    def to_cupy(self) -> 'CupyDataset':
+        """Empty method to convert to cupy.
+
+        Returns:
+            Same CupyDataset.
+        """
+
+        return self
+
+    def to_pandas(self) -> 'PandasDataset':
+        """Convert to numpy.
+
+        Returns:
+            Numpy dataset
+        """
+
+        return self.to_numpy().to_pandas()
+
+    def to_csr(self) -> 'CSRSparseDataset':
+        """Convert to csr.
+
+        Returns:
+            Same dataset in CSRSparseDatatset format.
+        """
+
+        return self.to_numpy().to_csr()
+
+    @staticmethod
+    def from_dataset(dataset: Dataset) -> 'CupyDataset':
+        """Convert random dataset to cupy.
+
+        Returns:
+            Cupy dataset.
+
+        """
+        return dataset.to_numpy().to_cupy()
 
 @record_history(enabled=False)
 class CSRSparseDataset(NumpyDataset):
@@ -699,6 +820,204 @@ class PandasDataset(LAMLDataset):
 
         """
         return dataset.to_pandas()
+
+    def nan_rate(self):
+        """Counts overall number of nans in dataset.
+
+        Returns:
+            Number of nans.
+
+        """
+        return (len(self.data) - self.data.count()).sum()
+
+@record_history(enabled=False)
+class CudfDataset(PandasDataset):
+    """Dataset that contains `cudf.core.dataframe.DataFrame` features and ` cudf.core.series.Series` targets."""
+    _init_checks = ()
+    _data_checks = ()
+    _concat_checks = ()
+    _dataset_type = 'CudfDataset'
+
+    def __init__(self, data: Optional[DataFrame] = None, roles: Optional[RolesDict] = None, task: Optional[Task] = None,
+                 **kwargs: Series):
+        """Create dataset from `cudf.core.dataframe.DataFrame` and ` cudf.core.series.Series`
+        or from 'pd.DataFrame' and 'pd.Series'.
+
+        Args:
+            data: Table with features.
+            features: features names.
+            roles: Roles specifier.
+            task: Task specifier.
+            **kwargs: Series, array like attrs target, group etc...
+
+        """
+        if roles is None:
+            roles = {}
+        # parse parameters
+        # check if target, group etc .. defined in roles
+        for f in roles:
+            for k, r in zip(valid_array_attributes, array_attr_roles):
+                if roles[f].name == r:
+                    kwargs[k] = data[f].reset_index(drop=True)
+                    roles[f] = DropRole()
+        self._initialize(task, **kwargs)
+        if data is not None:
+            self.set_data(data, None, roles)
+
+
+
+    def set_data(self, data: DataFrame, features: None, roles: RolesDict):
+        """Inplace set data, features, roles for empty dataset.
+
+        Args:
+            data: Table with features.
+            features: `None`, just for same interface.
+            roles: Dict with roles.
+
+        """
+        if isinstance(data, pd.DataFrame):
+            data = cudf.DataFrame(data)
+        elif isinstance(data, cudf.DataFrame):
+            pass
+        else:
+            raise ValueError('Data type must be either pd.DataFrame or cudf.DataFrame.')
+
+        super().set_data(data, features, roles)
+        self._check_dtype()
+
+    def _check_dtype(self):
+        """Check if dtype in .set_data is ok and cast if not."""
+        date_columns = []
+
+        self.dtypes = {}
+        for f in self.roles:
+            if self.roles[f].name == 'Datetime':
+                date_columns.append(f)
+            else:
+                self.dtypes[f] = self.roles[f].dtype
+
+        self.data = self.data.astype(self.dtypes)
+        self.data.reset_index(drop=True, inplace=True)
+        # do we need to reset_index ?? If yes - drop for Series attrs too
+        # case to check - concat pandas dataset and from numpy to pandas dataset
+        # TODO: Think about reset_index here
+        # self.data.reset_index(inplace=True, drop=True)
+
+        # handle dates types
+        for i in date_columns:
+            dt_role = self.roles[i]
+            if not (self.data.dtypes[i] is np.datetime64):
+                self.data[i] = cudf.to_datetime(self.data[i], format=dt_role.format, unit=dt_role.unit,
+                                              origin=dt_role.origin, cache=True)
+
+            self.dtypes[i] = np.datetime64
+
+    @staticmethod
+    def _hstack(datasets: Sequence[DataFrame]) -> DataFrame:
+        """Define how to concat features arrays.
+
+        Args:
+            datasets: Sequence of tables.
+
+        Returns:
+            concatenated table.
+
+        """
+        return cudf.concat(datasets, axis=1)
+
+    @staticmethod
+    def _get_rows(data: DataFrame, k: IntIdx) -> FrameOrSeries:
+        """Define how to get rows slice.
+
+        Args:
+            data: Table with data.
+            k: Sequence of `int` indexes or `int`.
+
+        Returns:
+            Sliced rows.
+
+        """
+        return data.iloc[k]
+
+    @staticmethod
+    def _get_cols(data: DataFrame, k: IntIdx) -> FrameOrSeries:
+        """Define how to get cols slice.
+
+        Args:
+            data: Table with data.
+            k: Sequence of `int` indexes or `int`
+
+        Returns:
+           Sliced cols.
+
+        """
+        return data.iloc[:, k]
+
+    @classmethod
+    def _get_2d(cls, data: DataFrame, k: Tuple[IntIdx, IntIdx]) -> FrameOrSeries:
+        """Define 2d slice of table.
+
+        Args:
+            data: Table with data.
+            k: Sequence of `int` indexes or `int`.
+
+        Returns:
+            2d sliced table.
+
+        """
+        rows, cols = k
+
+        return data.iloc[rows, cols]
+
+    @staticmethod
+    def _set_col(data: DataFrame, k: int, val: Union[Series, np.ndarray]):
+        """Inplace set column value to `pd.DataFrame`.
+
+        Args:
+            data: Table with data.
+            k: Column index.
+            val: Values to set.
+
+        """
+        data.iloc[:, k] = val
+
+    def to_numpy(self) -> 'NumpyDataset':
+        """Convert to class:`NumpyDataset`.
+
+        Returns:
+            Same dataset in class:`NumpyDataset` format.
+
+        """
+        # check for empty
+        data = None if self.data is None else cp.asnumpy(self.data.values)
+        roles = self.roles
+        features = self.features
+        # target and etc ..
+        params = dict(((x, self.__dict__[x].values) for x in self._array_like_attrs))
+        task = self.task
+
+        return NumpyDataset(data, features, roles, task, **params)
+
+    def to_pandas(self) -> 'PandasDataset':
+        """Empty method, return the same object.
+
+        Returns:
+            Self.
+
+        """
+        return self
+
+    @staticmethod
+    def from_dataset(dataset: Dataset) -> 'PandasDataset':
+        """Convert random dataset to pandas dataset.
+
+        Returns:
+            Converted to pandas dataset.
+
+        """
+        #return dataset.to_pandas()
+        #############################TO BE DONE#########################
+        pass
 
     def nan_rate(self):
         """Counts overall number of nans in dataset.
