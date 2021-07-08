@@ -310,6 +310,14 @@ class NumpyDataset(LAMLDataset):
 
         return PandasDataset(data, roles, task, **params)
 
+    def to_cudf(self) -> 'CudfDataset':
+        """Convert to CudfDataset.
+
+        Returns:
+            Same dataset in CudfDataset format.
+        """
+        return self.to_pandas().to_cudf()
+
     @staticmethod
     def from_dataset(dataset: Dataset) -> 'NumpyDataset':
         """Convert random dataset to numpy.
@@ -443,10 +451,10 @@ class CupyDataset(NumpyDataset):
         return self
 
     def to_pandas(self) -> 'PandasDataset':
-        """Convert to numpy.
+        """Convert to PandasDataset.
 
         Returns:
-            Numpy dataset
+            Same dataset in PandasDataset format.
         """
 
         return self.to_numpy().to_pandas()
@@ -459,6 +467,22 @@ class CupyDataset(NumpyDataset):
         """
 
         return self.to_numpy().to_csr()
+
+    def to_cudf(self) -> 'CudfDataset':
+        """Convert to PandasDataset.
+
+        Returns:
+            Same dataset in PandasDataset format.
+        """
+        # check for empty case
+        data = None if self.data is None else cudf.DataFrame(self.data, columns=self.features)
+        roles = self.roles
+        # target and etc ..
+        params = dict(((x, Series(self.__dict__[x])) for x in self._array_like_attrs))
+        task = self.task
+
+        return CudfDataset(data, roles, task, **params)
+
 
     @staticmethod
     def from_dataset(dataset: Dataset) -> 'CupyDataset':
@@ -802,6 +826,15 @@ class PandasDataset(LAMLDataset):
 
         return NumpyDataset(data, features, roles, task, **params)
 
+    def to_cupy(self) -> 'CupyDataset':
+        """Convert to class:`NumpyDataset`.
+
+            Returns:
+                Same dataset in class:`NumpyDataset` format.
+
+        """
+        return self.to_numpy().to_cupy()
+
     def to_pandas(self) -> 'PandasDataset':
         """Empty method, return the same object.
 
@@ -810,6 +843,21 @@ class PandasDataset(LAMLDataset):
 
         """
         return self
+
+    def to_cudf(self):
+        """Convert to class:`NumpyDataset`.
+
+        Returns:
+            Same dataset in class:`CudfDataset` format.
+        """
+
+        data = cudf.DataFrame(self.data)
+        roles = self.roles
+        task = self.task
+
+        params = dict(((x, self.__dict__[x].values) for x in self._array_like_attrs))
+
+        return CudfDataset(data, roles, task, **params)
 
     @staticmethod
     def from_dataset(dataset: Dataset) -> 'PandasDataset':
@@ -999,13 +1047,19 @@ class CudfDataset(PandasDataset):
         return NumpyDataset(data, features, roles, task, **params)
 
     def to_pandas(self) -> 'PandasDataset':
-        """Empty method, return the same object.
+        """Convert dataset to pandas.
 
         Returns:
-            Self.
+            Same dataset in PandasDataset format
 
         """
-        return self
+        data = self.data.to_pandas()
+        roles = self.roles
+        task = self.task
+
+        params = dict(((x, self.__dict__[x].values) for x in self._array_like_attrs))
+
+        return PandasDataset(data, roles, task, **params)
 
     @staticmethod
     def from_dataset(dataset: Dataset) -> 'PandasDataset':
@@ -1015,9 +1069,7 @@ class CudfDataset(PandasDataset):
             Converted to pandas dataset.
 
         """
-        #return dataset.to_pandas()
-        #############################TO BE DONE#########################
-        pass
+        return dataset.to_cudf()
 
     def nan_rate(self):
         """Counts overall number of nans in dataset.
