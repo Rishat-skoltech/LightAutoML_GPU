@@ -8,6 +8,7 @@ import cupy as cp
 
 import pandas as pd
 import cudf
+import dask_cudf
 
 from log_calls import record_history
 from pandas import Series, DataFrame
@@ -328,7 +329,7 @@ class NumpyDataset(LAMLDataset):
         """
         return dataset.to_numpy()
 
-@record_history(enabled=True)
+@record_history(enabled=False)
 class CupyDataset(NumpyDataset):
 
     def _check_dtype(self):
@@ -1046,6 +1047,23 @@ class CudfDataset(PandasDataset):
 
         return NumpyDataset(data, features, roles, task, **params)
 
+    def to_cupy(self) -> 'CupyDataset':
+        """Convert to class:`NumpyDataset`.
+
+        Returns:
+            Same dataset in class:`NumpyDataset` format.
+
+        """
+        # check for empty
+        data = None if self.data is None else cp.asarray(self.data.values)
+        roles = self.roles
+        features = self.features
+        # target and etc ..
+        params = dict(((x, self.__dict__[x].values) for x in self._array_like_attrs))
+        task = self.task
+
+        return CupyDataset(data, features, roles, task, **params)
+
     def to_pandas(self) -> 'PandasDataset':
         """Convert dataset to pandas.
 
@@ -1061,6 +1079,30 @@ class CudfDataset(PandasDataset):
 
         return PandasDataset(data, roles, task, **params)
 
+    def to_cudf(self):
+        """Empty method to return self
+
+        Returns:
+            self
+        """
+
+        return self
+
+    def to_dask_cudf(self, npartitions: int = None):
+        """Convert dataset to dask_cudf.
+
+        Returns:
+            Same dataset in DaskCudfDataset format/
+
+        """
+        data = self.data
+        roles = self.roles
+        task = self.task
+
+        params = dict(((x, self.__dict__[x].values) for x in self._array_like_attrs))
+
+        return DaskCudfDataset(data, roles, task, npartitions, **params)
+
     @staticmethod
     def from_dataset(dataset: Dataset) -> 'PandasDataset':
         """Convert random dataset to pandas dataset.
@@ -1070,6 +1112,207 @@ class CudfDataset(PandasDataset):
 
         """
         return dataset.to_cudf()
+
+    def nan_rate(self):
+        """Counts overall number of nans in dataset.
+
+        Returns:
+            Number of nans.
+
+        """
+        return (len(self.data) - self.data.count()).sum()
+
+@record_history(enabled=False)
+class DaskCudfDataset(LAMLDataset):
+    """Dataset that contains `dask_cudf.core.dataframe.DataFrame` features and ` dask_cudf.core.series.Series` targets."""
+    _init_checks = ()
+    _data_checks = ()
+    _concat_checks = ()
+    _dataset_type = 'CudfDataset'
+
+    def __init__(self, data: Optional[DataFrame] = None, roles: Optional[RolesDict] = None, task: Optional[Task] = None,
+                 npartitions: int = None, **kwargs: Series):
+        """Create dataset from `cudf.core.dataframe.DataFrame` and ` cudf.core.series.Series`
+        or from 'pd.DataFrame' and 'pd.Series'.
+
+        Args:
+            data: Table with features.
+            features: features names.
+            roles: Roles specifier.
+            task: Task specifier.
+            **kwargs: Series, array like attrs target, group etc...
+
+        """
+        self.npartitions = npartitions
+        if roles is None:
+            roles = {}
+        # parse parameters
+        # check if target, group etc .. defined in roles
+        for f in roles:
+            for k, r in zip(valid_array_attributes, array_attr_roles):
+                if roles[f].name == r:
+                    kwargs[k] = data[f].reset_index(drop=True)
+                    roles[f] = DropRole()
+        self._initialize(task, **kwargs)
+        if data is not None:
+            self.set_data(data, None, roles)
+
+    def set_data(self, data: DataFrame, features: None, roles: RolesDict):
+        """Inplace set data, features, roles for empty dataset.
+
+        Args:
+            data: Table with features.
+            features: `None`, just for same interface.
+            roles: Dict with roles.
+
+        """
+        if isinstance(data, pd.DataFrame):
+            data = cudf.DataFrame(data)
+        elif isinstance(data, cudf.DataFrame):
+            pass
+        else:
+            raise ValueError('Data type must be either pd.DataFrame or cudf.DataFrame.')
+        data = dask_cudf.from_cudf(data, npartitions=self.npartitions)
+        super().set_data(data, features, roles)
+
+    @staticmethod
+    def _hstack(datasets: Sequence[DataFrame]) -> DataFrame:
+        """Define how to concat features arrays.
+
+        Args:
+            datasets: Sequence of tables.
+
+        Returns:
+            concatenated table.
+
+        """
+        return cudf.concat(datasets, axis=1)
+
+    @staticmethod
+    def _get_rows(data: DataFrame, k: IntIdx) -> FrameOrSeries:
+        """Define how to get rows slice.
+
+        Args:
+            data: Table with data.
+            k: Sequence of `int` indexes or `int`.
+
+        Returns:
+            Sliced rows.
+
+        """
+        raise NotImplementedError
+        #return data.iloc[k]
+
+    @staticmethod
+    def _get_cols(data: DataFrame, k: IntIdx) -> FrameOrSeries:
+        """Define how to get cols slice.
+
+        Args:
+            data: Table with data.
+            k: Sequence of `int` indexes or `int`
+
+        Returns:
+           Sliced cols.
+
+        """
+        raise NotImplementedError
+        #return data.iloc[:, k]
+
+    @classmethod
+    def _get_2d(cls, data: DataFrame, k: Tuple[IntIdx, IntIdx]) -> FrameOrSeries:
+        """Define 2d slice of table.
+
+        Args:
+            data: Table with data.
+            k: Sequence of `int` indexes or `int`.
+
+        Returns:
+            2d sliced table.
+
+        """
+        raise NotImplementedError
+        #rows, cols = k
+
+        #return data.iloc[rows, cols]
+
+    @staticmethod
+    def _set_col(data: DataFrame, k: int, val: Union[Series, np.ndarray]):
+        """Inplace set column value to `pd.DataFrame`.
+
+        Args:
+            data: Table with data.
+            k: Column index.
+            val: Values to set.
+
+        """
+        raise NotImplementedError
+
+        #data.iloc[:, k] = val
+
+    def to_cudf(self):
+        """Convert to class:`NumpyDataset`.
+
+        Returns:
+            Same dataset in class:`NumpyDataset` format.
+        """
+
+        data = self.data.compute()
+        roles = self.roles
+        task = self.task
+
+        params = dict(((x, self.__dict__[x].values) for x in self._array_like_attrs))
+
+        return CudfDataset(data, roles, task, **params)
+
+    def to_numpy(self) -> 'NumpyDataset':
+        """Convert to class:`NumpyDataset`.
+
+        Returns:
+            Same dataset in class:`NumpyDataset` format.
+
+        """
+
+        return self.to_cudf().to_numpy()
+
+    def to_cupy(self) -> 'CupyDataset':
+        """Convert dataset to cupy.
+
+        Returns:
+            Same dataset in CupyDataset format
+
+        """
+
+        return self.to_cudf().to_cupy()
+
+    def to_pandas(self) -> 'PandasDataset':
+        """Convert dataset to pandas.
+
+        Returns:
+            Same dataset in PandasDataset format
+
+        """
+
+        return self.to_cudf().to_pandas()
+
+    def to_dask_cudf(self) -> 'DaskCudfDataset':
+        """Empty metod to return self.
+
+        Returns:
+            self
+
+        """
+
+        return self
+
+    @staticmethod
+    def from_dataset(dataset: Dataset) -> 'PandasDataset':
+        """Convert random dataset to pandas dataset.
+
+        Returns:
+            Converted to pandas dataset.
+
+        """
+        return dataset.to_cudf().to_dask_cudf()
 
     def nan_rate(self):
         """Counts overall number of nans in dataset.
