@@ -54,10 +54,13 @@ def test_manual_pipeline():
     # create Task
     task = Task('binary')
     # # Creating PandasDataSet
-    logging.debug('Creating PandasDataset')
+    logging.debug('Creating PandasDataset/Cupy dataset')
     start_time = time.time()
     pd_dataset = PandasDataset(data, roles_parser(check_roles), task=task)
     numpy_dataset = pd_dataset.to_numpy()
+    cudf_dataset = pd_dataset.to_cudf()
+
+    numpy_dataset = cudf_dataset.to_numpy()
     logging.debug('Created numpy dataset. Time = {:.3f} sec'.format(time.time() - start_time))
     
     start_time = time.time()
@@ -76,3 +79,5 @@ def test_manual_pipeline():
     pandas_dataset = cupy_dataset.to_pandas()
     logging.debug('Created numpy/pandas dataset. Time = {:.3f} sec'.format(time.time() - start_time))
     #print(type(numpy_dataset.data))
+
+test_manual_pipeline()

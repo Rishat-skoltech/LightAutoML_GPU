@@ -900,6 +900,7 @@ class CudfDataset(PandasDataset):
             **kwargs: Series, array like attrs target, group etc...
 
         """
+
         if roles is None:
             roles = {}
         # parse parameters
@@ -914,7 +915,6 @@ class CudfDataset(PandasDataset):
             self.set_data(data, None, roles)
 
 
-
     def set_data(self, data: DataFrame, features: None, roles: RolesDict):
         """Inplace set data, features, roles for empty dataset.
 
@@ -924,6 +924,7 @@ class CudfDataset(PandasDataset):
             roles: Dict with roles.
 
         """
+
         if isinstance(data, pd.DataFrame):
             data = cudf.DataFrame(data)
         elif isinstance(data, cudf.DataFrame):
@@ -931,8 +932,9 @@ class CudfDataset(PandasDataset):
         else:
             raise ValueError('Data type must be either pd.DataFrame or cudf.DataFrame.')
 
-        super().set_data(data, features, roles)
-        self._check_dtype()
+        super(CudfDataset.__bases__[0], self).set_data(data, features, roles)
+
+        #self._check_dtype() TEMPORARILY FREEZE DTYPE CHECK
 
     def _check_dtype(self):
         """Check if dtype in .set_data is ok and cast if not."""
@@ -986,6 +988,7 @@ class CudfDataset(PandasDataset):
             Sliced rows.
 
         """
+
         return data.iloc[k]
 
     @staticmethod
@@ -1044,7 +1047,6 @@ class CudfDataset(PandasDataset):
         # target and etc ..
         params = dict(((x, self.__dict__[x].values) for x in self._array_like_attrs))
         task = self.task
-
         return NumpyDataset(data, features, roles, task, **params)
 
     def to_cupy(self) -> 'CupyDataset':
