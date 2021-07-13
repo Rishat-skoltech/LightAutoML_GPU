@@ -1018,12 +1018,11 @@ class CudfDataset(PandasDataset):
 
         """
         rows, cols = k
-
         return data.iloc[rows, cols]
 
     @staticmethod
     def _set_col(data: DataFrame, k: int, val: Union[Series, np.ndarray]):
-        """Inplace set column value to `pd.DataFrame`.
+        """Inplace set column value to `cudf.DataFrame`.
 
         Args:
             data: Table with data.

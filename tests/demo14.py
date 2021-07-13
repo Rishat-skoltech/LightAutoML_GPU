@@ -60,7 +60,7 @@ def test_manual_pipeline():
     cudf_dataset = pd_dataset.to_cudf()
 
     logging.debug('CudfDataset created. Time = {:.3f} sec'.format(time.time() - start_time))
-    # # Print pandas dataset feature roles
+    # # Print cudf dataset feature roles
     logging.debug('Print cudf dataset feature roles')
 
     roles = cudf_dataset.roles
@@ -69,6 +69,13 @@ def test_manual_pipeline():
     # # Feature selection part
     logging.debug('Feature selection part')
 
+    # Testing iloc functionality
+    logging.debug("Testing slices functionality")
+    slice1 = cudf_dataset._get_cols(cudf_dataset.data, 2)
+    slice2 = cudf_dataset._get_rows(cudf_dataset.data, 1)
+    #slice3 = cudf_dataset._get_2d(cudf_dataset, (2,3))
+    print("Slice 1:", slice1)
+    print("Slice 2:", slice2)
     #############TO BE DONE###########################
     exit()
 test_manual_pipeline()
