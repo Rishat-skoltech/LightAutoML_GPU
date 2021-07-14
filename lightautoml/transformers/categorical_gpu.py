@@ -718,7 +718,7 @@ class CatIntersectstions(LabelEncoder):
         self.max_depth = max_depth
 
     @staticmethod
-    def _make_category(df: DataFrame, cols: Sequence[str]) -> np.ndarray:
+    def _make_category(df: cudf.DataFrame, cols: Sequence[str]) -> cp.ndarray:
         """Make hash for category interactions.
 
         Args:
@@ -726,31 +726,37 @@ class CatIntersectstions(LabelEncoder):
             cols: List of columns
 
         Returns:
-            Hash np.ndarray.
+            Hash cp.ndarray.
 
         """
-        res = np.empty((df.shape[0],), dtype=np.int32)
 
-        for n, inter in enumerate(zip(*(df[x] for x in cols))):
-            h = murmurhash3_32('_'.join(map(str, inter)), seed=42)
-            res[n] = h
+        delim = cudf.Series(["_" for _ in range(len(df))])
+        res = None
+
+        for col in (cols):
+            if res is None:
+                res = df[col]
+            else:
+                res = res + delim + df[col]
+
+        res = res.hash_values()
 
         return res
 
-    def _build_df(self, dataset: NumericalDataset) -> PandasDataset:
+    def _build_df(self, dataset: NumericalDataset) -> CudfDataset:
         """
 
         Args:
-            dataset: Pandas or Numpy dataset of categorical features.
+            dataset: Cudf or Cupy dataset of categorical features.
 
         Returns:
             Dataset.
         """
-        dataset = dataset.to_pandas()
+        dataset = dataset.to_cudf()
         df = dataset.data
 
         roles = {}
-        new_df = DataFrame(index=df.index)
+        new_df = cudf.DataFrame(index=df.index)
         for comb in self.intersections:
             name = '({0})'.format('__'.join(comb))
             new_df[name] = self._make_category(df, comb)
@@ -787,7 +793,7 @@ class CatIntersectstions(LabelEncoder):
         """Create label encoded intersections and apply mapping
 
         Args:
-            dataset: Pandas or Numpy dataset of categorical features
+            dataset: Cudf or Cupy dataset of categorical features
 
         Returns:
 
@@ -808,17 +814,17 @@ class OrdinalEncoder(LabelEncoder):
     _fname_prefix = 'ord'
 
     # _output_role = NumericRole(np.float32)
-    _fillna_val = np.nan
+    _fillna_val = cp.nan
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._output_role = NumericRole(np.float32)
+        self._output_role = NumericRole(cp.float32)
 
     def fit(self, dataset: NumericalDataset):
         """Estimate label frequencies and create encoding dicts.
 
         Args:
-            dataset: Pandas or Numpy dataset of categorical features.
+            dataset: Cudf or Cupy dataset of categorical features.
 
         """
         # set transformer names and add checks
@@ -833,7 +839,7 @@ class OrdinalEncoder(LabelEncoder):
         for i in subs.columns:
             role = roles[i]
             try:
-                flg_number = np.issubdtype(role.dtype, np.number)
+                flg_number = cp.issubdtype(role.dtype, cp.number)
             except TypeError:
                 flg_number = False
 
@@ -841,8 +847,8 @@ class OrdinalEncoder(LabelEncoder):
                 co = role.unknown
                 cnts = subs[i].value_counts(dropna=True)
                 cnts = cnts[cnts > co].reset_index()
-                cnts = Series(cnts['index'].astype(str).rank().values, index=cnts['index'].values)
-                cnts = cnts.append(Series([cnts.shape[0] + 1], index=[np.nan]))
+                cnts = cudf.Series(cnts['index'].astype(str).rank().values, index=cnts['index'].values)
+                cnts = cnts.append(cudf.Series([cnts.shape[0] + 1], index=[np.nan]))
                 self.dicts[i] = cnts
 
         return self
