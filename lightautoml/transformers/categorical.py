@@ -656,7 +656,7 @@ class MultiClassTargetEncoder(LAMLTransformer):
 
 
 @record_history(enabled=False)
-class CatIntersectstions(LabelEncoder):
+class CatIntersections(LabelEncoder):
     """Build label encoded intertsections of categorical variables."""
 
     _fit_checks = (categorical_check,)

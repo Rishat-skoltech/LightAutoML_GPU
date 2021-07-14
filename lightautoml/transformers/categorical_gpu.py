@@ -1,18 +1,14 @@
-"""Categorical features transformerrs."""
+"""Categorical features transformers."""
 
 from itertools import combinations
 from typing import Optional, Union, List, Sequence, cast
 
-import numpy as np
 import cupy as cp
-
 import cudf
 
 from log_calls import record_history
-from pandas import Series, DataFrame
 
 from cuml.preprocessing import OneHotEncoder
-
 
 from .base import LAMLTransformer
 from ..dataset.base import LAMLDataset
@@ -107,7 +103,7 @@ class LabelEncoder(LAMLTransformer):
         self.random_state = random_state
         self._output_role = CategoryRole(cp.int32, label_encoded=True)
 
-    def _get_df(self, dataset: NumericalDataset) -> DataFrame:
+    def _get_df(self, dataset: NumericalDataset) -> cudf.DataFrame:
         """Get df and sample.
 
         Args:
@@ -436,11 +432,11 @@ class TargetEncoder(LAMLTransformer):
         f_sum = cp.zeros(n_folds, dtype=cp.float32)
         f_count = cp.zeros(n_folds, dtype=cp.float32)
 
-        #TEST THIS PART
+        # TEST THIS PART
         f_sum += cp.bincount(folds, target, minlength=f_sum.size)
         f_count += cp.bincount(folds, minlength=f_count.size)
-        #cp.add.at(f_sum, folds, target)
-        #cp.add.at(f_count, folds, 1)
+        # cp.add.at(f_sum, folds, target)
+        # cp.add.at(f_count, folds, 1)
 
         folds_prior = (f_sum.sum() - f_sum) / (f_count.sum() - f_count)
         oof_feats = cp.zeros(data.shape, dtype=cp.float32)
@@ -449,16 +445,15 @@ class TargetEncoder(LAMLTransformer):
             vec = data[:, n]
 
             # calc folds stats
-            enc_dim = vec.max() + 1
+            # enc_dim = vec.max() + 1
 
             # TODO: test this part
             folds_vals = cp.unique(folds)
             vec_vals = cp.unique(vec)
-            f_count = cp.array([[(vec[folds==f]==v).sum() for f in \
-                                   folds_vals] for v in vec_vals])
+            f_count = cp.array([[(vec[folds == f] == v).sum() for f in \
+                                 folds_vals] for v in vec_vals])
             f_sum = cp.array([[target[((folds == f) * (vec == v))].sum() for f in \
-                                   folds_vals] for v in vec_vals])
-
+                               folds_vals] for v in vec_vals])
 
             # calc total stats
             t_sum = f_sum.sum(axis=1, keepdims=True)
@@ -584,9 +579,9 @@ class MultiClassTargetEncoder(LAMLTransformer):
         # prior
         prior = cast(cp.ndarray, cp.arange(n_classes)[:, cp.newaxis] == target).mean(axis=1)
         # folds prior
-        f_count = cp.zeros((1,n_folds), dtype=int)
+        f_count = cp.zeros((1, n_folds), dtype=int)
 
-        #TODO: test this part
+        # TODO: test this part
         f_sum = cp.array([[(target[folds == f] == t).sum() for f in cp.unique(folds)] for t in cp.unique(target)])
         f_count[0] = cp.bincount(folds, minlength=f_count[0].size).astype(int)
 
@@ -606,19 +601,19 @@ class MultiClassTargetEncoder(LAMLTransformer):
             vec = data[:, n]
 
             # calc folds stats
-            enc_dim = vec.max() + 1
+            # enc_dim = vec.max() + 1
 
             # TODO: test this part
             target_vals = cp.unique(target)
             folds_vals = cp.unique(folds)
             vec_vals = cp.unique(vec)
 
-            f_sum = cp.array([[[((vec==v) * (target==t) * (folds==f)).sum() \
-                                    for f in folds_vals] \
-                                   for t in target_vals] \
-                                  for v in vec_vals])
-            f_count = cp.array([[[((folds==f) * (vec == v)).sum() for f in folds_vals]] \
-                                    for v in vec_vals])
+            f_sum = cp.array([[[((vec == v) * (target == t) * (folds == f)).sum() \
+                                for f in folds_vals] \
+                               for t in target_vals] \
+                              for v in vec_vals])
+            f_count = cp.array([[[((folds == f) * (vec == v)).sum() for f in folds_vals]] \
+                                for v in vec_vals])
 
             f_sum = f_sum.astype(cp.float32)
             f_count = f_count.astype(cp.float32)
@@ -681,8 +676,8 @@ class MultiClassTargetEncoder(LAMLTransformer):
 
 
 @record_history(enabled=False)
-class CatIntersectstions(LabelEncoder):
-    """Build label encoded intertsections of categorical variables."""
+class CatIntersections(LabelEncoder):
+    """Build label encoded intersections of categorical variables."""
 
     _fit_checks = (categorical_check,)
     _transform_checks = ()
@@ -718,7 +713,7 @@ class CatIntersectstions(LabelEncoder):
         delim = cudf.Series(["_" for _ in range(len(df))])
         res = None
 
-        for col in (cols):
+        for col in cols:
             if res is None:
                 res = df[col]
             else:
