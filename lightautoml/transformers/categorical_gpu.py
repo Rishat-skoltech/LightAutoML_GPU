@@ -428,18 +428,18 @@ class TargetEncoder(LAMLTransformer):
         data = dataset.data
 
         # TODO: check if it is necessary to change dtype to cp.int32
-        target = dataset.target.astype(cp.int32)
+        target = cp.asarray(dataset.target).astype(cp.in32)
         score_func = self.binary_score_func if dataset.task.name == 'binary' else self.reg_score_func
 
-        folds = dataset.folds
-        n_folds = folds.max() + 1
+        folds = cp.asarray(dataset.folds)
+        n_folds = int(folds.max() + 1)
         alphas = cp.array(self.alphas)[cp.newaxis, :]
 
         self.encodings = []
         prior = target.mean()
         # folds priors
-        f_sum = cp.zeros(n_folds, dtype=cp.float64)
-        f_count = cp.zeros(n_folds, dtype=cp.float64)
+        f_sum = cp.zeros(n_folds, dtype=cp.float32)
+        f_count = cp.zeros(n_folds, dtype=cp.float32)
 
         #TEST THIS PART
         f_sum += cp.bincount(folds, target, minlength=f_sum.size)
@@ -458,9 +458,18 @@ class TargetEncoder(LAMLTransformer):
             f_sum = cp.zeros((enc_dim, n_folds), dtype=cp.float32)
             f_count = cp.zeros((enc_dim, n_folds), dtype=cp.float32)
 
-            #TODO: replace at ufunc
+
             #np.add.at(f_sum, (vec, folds), target)
-            #np.add.at(f_count, (vec, folds), 1)
+            # np.add.at(f_count, (vec, folds), 1)
+
+            # TODO: test this part
+            folds_vals = cp.unique(folds)
+            vec_vals = cp.unique(vec)
+            f_count = cp.array([[(vec[folds==f]==v).sum() for f in \
+                                   folds_vals] for v in vec_vals])
+            f_sum = cp.array([[target[((folds == f) * (vec == v))].sum() for f in \
+                                   folds_vals] for v in vec_vals])
+
 
             # calc total stats
             t_sum = f_sum.sum(axis=1, keepdims=True)
@@ -588,7 +597,7 @@ class MultiClassTargetEncoder(LAMLTransformer):
         # folds prior
         f_count = cp.zeros((1,n_folds), dtype=int)
 
-        #TEST THIS FEATURE
+        #TODO: test this part
         f_sum = cp.array([[(target[folds == f] == t).sum() for f in cp.unique(folds)] for t in cp.unique(target)])
         f_count[0] = cp.bincount(folds, minlength=f_count[0].size).astype(int)
 
@@ -609,12 +618,25 @@ class MultiClassTargetEncoder(LAMLTransformer):
 
             # calc folds stats
             enc_dim = vec.max() + 1
-            f_sum = cp.zeros((enc_dim, n_classes, n_folds), dtype=cp.float64)
-            f_count = cp.zeros((enc_dim, 1, n_folds), dtype=cp.float64)
+            #f_sum = cp.zeros((enc_dim, n_classes, n_folds), dtype=int)
+            #f_count = cp.zeros((enc_dim, 1, n_folds), dtype=int)
 
-            # TODO: rewrite add.at statement
+            # TODO: test this part
             #np.add.at(f_sum, (vec, target, folds), 1)
             #np.add.at(f_count, (vec, 0, folds), 1)
+            target_vals = cp.unique(target)
+            folds_vals = cp.unique(folds)
+            vec_vals = cp.unique(vec)
+
+            f_sum = cp.array([[[((vec==v) * (target==t) * (folds==f)).sum() \
+                                    for f in folds_vals] \
+                                   for t in target_vals] \
+                                  for v in vec_vals])
+            f_count = cp.array([[[((folds==f) * (vec == v)).sum() for f in folds_vals]] \
+                                    for v in vec_vals])
+
+            f_sum = f_sum.astype(cp.float32)
+            f_count = f_count.astype(cp.float32)
 
             # calc total stats
             t_sum = f_sum.sum(axis=2, keepdims=True)
