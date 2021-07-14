@@ -13,16 +13,15 @@ from pandas import Series, DataFrame
 
 from cuml.preprocessing import OneHotEncoder
 
-from sklearn.utils.murmurhash import murmurhash3_32
 
 from .base import LAMLTransformer
 from ..dataset.base import LAMLDataset
-from ..dataset.np_pd_dataset_cupy import PandasDataset, CudfDataset, NumpyDataset, CupyDataset, DaskCudfDataset, CSRSparseDataset
+from ..dataset.np_pd_dataset_cupy import CudfDataset, CupyDataset, DaskCudfDataset, CSRSparseDataset
 from ..dataset.roles import CategoryRole, NumericRole
 
-# type - something that can be converted to pandas dataset
-NumericalDataset = Union[NumpyDataset, CupyDataset, PandasDataset, CudfDataset, DaskCudfDataset]
-NumericalOrSparse = Union[NumpyDataset, CupyDataset, CSRSparseDataset]
+# type - something that can be converted to cudf dataset
+NumericalDataset = Union[CupyDataset, CudfDataset, DaskCudfDataset]
+NumericalOrSparse = Union[CupyDataset, CSRSparseDataset]
 
 
 @record_history(enabled=False)
@@ -94,8 +93,6 @@ class LabelEncoder(LAMLTransformer):
     _fit_checks = (categorical_check,)
     _transform_checks = ()
     _fname_prefix = 'le'
-
-    # _output_role = CategoryRole(np.int32, label_encoded=True)
     _fillna_val = 0
 
     def __init__(self, subs: Optional[int] = None, random_state: int = 42):
@@ -108,7 +105,7 @@ class LabelEncoder(LAMLTransformer):
         """
         self.subs = subs
         self.random_state = random_state
-        self._output_role = CategoryRole(np.int32, label_encoded=True)
+        self._output_role = CategoryRole(cp.int32, label_encoded=True)
 
     def _get_df(self, dataset: NumericalDataset) -> DataFrame:
         """Get df and sample.
@@ -134,7 +131,7 @@ class LabelEncoder(LAMLTransformer):
         """Estimate label frequencies and create encoding dicts.
 
         Args:
-            dataset: Pandas or Numpy dataset of categorical features.
+            dataset: Cudf or Cupy dataset of categorical features.
 
         Returns:
             self.
@@ -164,10 +161,10 @@ class LabelEncoder(LAMLTransformer):
         """Transform categorical dataset to int labels.
 
         Args:
-            dataset: Pandas or Numpy dataset of categorical features.
+            dataset: Cudf or Cupy dataset of categorical features.
 
         Returns:
-            Numpy dataset with encoded labels.
+            Cupy dataset with encoded labels.
 
         """
         # checks here
@@ -229,7 +226,7 @@ class OHEEncoder(LAMLTransformer):
         Automatically do ohe in sparse form if approximate fill_rate < `0.2`.
 
         Args:
-            dataset: Pandas or Numpy dataset of categorical features.
+            dataset: Cudf or Cupy dataset of categorical features.
 
         Returns:
             self.
@@ -254,7 +251,6 @@ class OHEEncoder(LAMLTransformer):
 
         # create ohe
         self.ohe = OneHotEncoder(categories=[cp.arange(x, y + 1, dtype=cp.int32) for (x, y) in zip(min_idx, max_idx)],
-                                 # drop=np.ones(max_idx.shape[0], dtype=np.int32),
                                  dtype=self.dtype, sparse=self.make_sparse,
                                  handle_unknown='ignore')
         self.ohe.fit(data)
@@ -272,10 +268,10 @@ class OHEEncoder(LAMLTransformer):
         """Transform categorical dataset to ohe.
 
         Args:
-            dataset: Pandas or Numpy dataset of categorical features.
+            dataset: Cudf or Cupy dataset of categorical features.
 
         Returns:
-            Numpy dataset with encoded labels.
+            Cupy dataset with encoded labels.
 
         """
         # checks here
@@ -308,20 +304,19 @@ class FreqEncoder(LabelEncoder):
     _transform_checks = ()
     _fname_prefix = 'freq'
 
-    # _output_role = NumericRole(np.float32)
     _fillna_val = 1
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         # TODO: check if it is necessary to change dtype to cp.float32
-        self._output_role = NumericRole(np.float32)
+        self._output_role = NumericRole(cp.float32)
 
     def fit(self, dataset: NumericalDataset):
         """Estimate label frequencies and create encoding dicts.
 
         Args:
-            dataset: Pandas or Numpy dataset of categorical features
+            dataset: Cudf or Cupy dataset of categorical features
 
         Returns:
             self.
@@ -455,12 +450,6 @@ class TargetEncoder(LAMLTransformer):
 
             # calc folds stats
             enc_dim = vec.max() + 1
-            f_sum = cp.zeros((enc_dim, n_folds), dtype=cp.float32)
-            f_count = cp.zeros((enc_dim, n_folds), dtype=cp.float32)
-
-
-            #np.add.at(f_sum, (vec, folds), target)
-            # np.add.at(f_count, (vec, folds), 1)
 
             # TODO: test this part
             folds_vals = cp.unique(folds)
@@ -500,7 +489,7 @@ class TargetEncoder(LAMLTransformer):
         """Transform categorical dataset to target encoding.
 
         Args:
-            dataset: Pandas/Cudf or Numpy/Cupy dataset of categorical features.
+            dataset: Cudf or Cupy dataset of categorical features.
 
         Returns:
             Cupy dataset with encoded labels.
@@ -569,7 +558,7 @@ class MultiClassTargetEncoder(LAMLTransformer):
         """Estimate label frequencies and create encoding dicts.
 
         Args:
-            dataset: Pandas/Cudf or Numpy/Cupy dataset of categorical label encoded features.
+            dataset: Cudf or Cupy dataset of categorical label encoded features.
 
         Returns:
             CupyDataset - target encoded features.
@@ -618,12 +607,8 @@ class MultiClassTargetEncoder(LAMLTransformer):
 
             # calc folds stats
             enc_dim = vec.max() + 1
-            #f_sum = cp.zeros((enc_dim, n_classes, n_folds), dtype=int)
-            #f_count = cp.zeros((enc_dim, 1, n_folds), dtype=int)
 
             # TODO: test this part
-            #np.add.at(f_sum, (vec, target, folds), 1)
-            #np.add.at(f_count, (vec, 0, folds), 1)
             target_vals = cp.unique(target)
             folds_vals = cp.unique(folds)
             vec_vals = cp.unique(vec)
@@ -647,8 +632,8 @@ class MultiClassTargetEncoder(LAMLTransformer):
             oof_count = t_count - f_count
 
             # (N x N_classes x 1 + 1 x 1 x N_alphas * N x N_classes x 1) / (N x 1 x 1 + N x 1 x 1) -> N x N_classes x N_alphas
-            candidates = ((oof_sum[vec, :, folds, np.newaxis] + alphas * folds_prior[folds, :, np.newaxis])
-                          / (oof_count[vec, :, folds, np.newaxis] + alphas)).astype(np.float32)
+            candidates = ((oof_sum[vec, :, folds, cp.newaxis] + alphas * folds_prior[folds, :, cp.newaxis])
+                          / (oof_count[vec, :, folds, cp.newaxis] + alphas)).astype(cp.float32)
 
             # norm over 1 axis
             candidates /= candidates.sum(axis=1, keepdims=True)
@@ -669,7 +654,7 @@ class MultiClassTargetEncoder(LAMLTransformer):
         """Transform categorical dataset to target encoding.
 
         Args:
-            dataset: Pandas/Cudf or Numpy/Cupy dataset of categorical features.
+            dataset: Cudf or Cupy dataset of categorical features.
 
         Returns:
             Cupy dataset with encoded labels.
@@ -771,7 +756,7 @@ class CatIntersectstions(LabelEncoder):
         """Create label encoded intersections and save mapping.
 
         Args:
-            dataset: Pandas or Numpy dataset of categorical features.
+            dataset: Cudf or Cupy dataset of categorical features.
 
         Returns:
             self.
@@ -789,7 +774,7 @@ class CatIntersectstions(LabelEncoder):
         inter_dataset = self._build_df(dataset)
         return super().fit(inter_dataset)
 
-    def transform(self, dataset: NumericalDataset) -> NumpyDataset:
+    def transform(self, dataset: NumericalDataset) -> CupyDataset:
         """Create label encoded intersections and apply mapping
 
         Args:
@@ -812,8 +797,6 @@ class OrdinalEncoder(LabelEncoder):
     _fit_checks = (categorical_check,)
     _transform_checks = ()
     _fname_prefix = 'ord'
-
-    # _output_role = NumericRole(np.float32)
     _fillna_val = cp.nan
 
     def __init__(self, *args, **kwargs):
@@ -848,7 +831,7 @@ class OrdinalEncoder(LabelEncoder):
                 cnts = subs[i].value_counts(dropna=True)
                 cnts = cnts[cnts > co].reset_index()
                 cnts = cudf.Series(cnts['index'].astype(str).rank().values, index=cnts['index'].values)
-                cnts = cnts.append(cudf.Series([cnts.shape[0] + 1], index=[np.nan]))
+                cnts = cnts.append(cudf.Series([cnts.shape[0] + 1], index=[cp.nan]))
                 self.dicts[i] = cnts
 
         return self
