@@ -486,7 +486,7 @@ class CupyDataset(NumpyDataset):
             Same dataset in PandasDataset format.
         """
         # check for empty case
-        data = None if self.data is None else cudf.DataFrame(self.data, columns=self.features)
+        data = None if self.data is None else cudf.DataFrame(self.data, columns=self.features, nan_as_null=False)
         roles = self.roles
         # target and etc ..
         params = dict(((x, Series(self.__dict__[x])) for x in self._array_like_attrs))
@@ -862,7 +862,7 @@ class PandasDataset(LAMLDataset):
             Same dataset in class:`CudfDataset` format.
         """
 
-        data = cudf.DataFrame(self.data)
+        data = cudf.DataFrame(self.data, nan_as_null=False)
         roles = self.roles
         task = self.task
 
