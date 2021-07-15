@@ -409,6 +409,16 @@ class CupyDataset(NumpyDataset):
         if type(data) == np.ndarray:
             data = cp.asarray(data)
         super(CupyDataset.__bases__[0], self).set_data(data, features, roles)
+
+        if self.target is not None:
+            self.target = cp.asarray(self.target)
+        if self.folds is not None:
+            self.folds = cp.asarray(self.folds)
+        if self.weights is not None:
+            self.weights = cp.asarray(self.weights)
+        if self.group is not None:
+            self.group = cp.asarray(self.group)
+
         self._check_dtype()
 
     @staticmethod
@@ -933,6 +943,15 @@ class CudfDataset(PandasDataset):
             raise ValueError('Data type must be either pd.DataFrame or cudf.DataFrame.')
 
         super(CudfDataset.__bases__[0], self).set_data(data, features, roles)
+
+        if self.target is not None:
+            self.target = cp.asarray(self.target)
+        if self.folds is not None:
+            self.folds = cp.asarray(self.folds)
+        if self.weights is not None:
+            self.weights = cp.asarray(self.weights)
+        if self.group is not None:
+            self.group = cp.asarray(self.group)
 
         #self._check_dtype() TEMPORARILY FREEZE DTYPE CHECK
 
