@@ -81,7 +81,7 @@ class TimeToNum(LAMLTransformer):
                                               periods=1,
                                               freq="d")).repeat(len(data)).reset_index()[0]
 
-        timedelta = cudf.Series(pd.Series(np.timedelta64(1, self.basic_interval)).repeat(len(data)).reset_index()[0]
+        timedelta = cudf.Series(pd.Series(np.timedelta64(1, self.basic_interval))).repeat(len(data)).reset_index()[0]
         new_arr = ((data - time_diff) / timedelta).values.astype(cp.float32)
 
         # create resulted
@@ -141,7 +141,7 @@ class BaseDiff(LAMLTransformer):
             check_func(dataset)
         return self
 
-    def transform(self, dataset: DatetimeCompatible) -> NumpyDataset:
+    def transform(self, dataset: DatetimeCompatible) -> CupyDataset:
         """Transform dates to numeric differences with base date.
 
         Args:
@@ -163,7 +163,7 @@ class BaseDiff(LAMLTransformer):
         time_delta = cudf.Series(pd.Series(np.timedelta64(1, self.basic_interval))).repeat(len(data)).reset_index()[0]
 
         for col in base_cols.columns:
-            new_arr = ((data - base_cols[[col]])/time_delta)).astype(cp.float32)
+            new_arr = ((data - base_cols[[col]])/time_delta).astype(cp.float32)
             feats_block.append(new_arr)
 
         feats_block = cp.concatenate(feats_block, axis=1)
@@ -230,7 +230,7 @@ class DateSeasons(LAMLTransformer):
 
         return self
 
-    def transform(self, dataset: DatetimeCompatible) -> NumpyDataset:
+    def transform(self, dataset: DatetimeCompatible) -> CupyDataset:
         """Transform dates to categories - seasons and holiday flag.
 
         Args:
