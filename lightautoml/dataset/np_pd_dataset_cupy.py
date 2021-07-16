@@ -346,7 +346,7 @@ class CupyDataset(NumpyDataset):
         for f in self.roles:
             self._roles[f].dtype = self.dtype
 
-        assert cp.issubdtype(self.dtype, cp.number), 'Support only numeric types in numpy dataset.'
+        assert cp.issubdtype(self.dtype, cp.number), 'Support only numeric types in Cupy dataset.'
 
         if self.data.dtype != self.dtype:
             self.data = self.data.astype(self.dtype)
@@ -1064,6 +1064,14 @@ class CudfDataset(PandasDataset):
             Same dataset in class:`NumpyDataset` format.
 
         """
+        # check for numeric types
+        dtypes = list(set([i.dtype for i in self.roles.values()]))
+        self.dtype = cp.find_common_type(dtypes, [])
+
+        for f in self.roles:
+            self._roles[f].dtype = self.dtype
+
+        assert cp.issubdtype(self.dtype, cp.number), 'Support only numeric types in Cupy dataset.'
         # check for empty
         data = None if self.data is None else cp.asnumpy(self.data.values)
         roles = self.roles
@@ -1080,6 +1088,15 @@ class CudfDataset(PandasDataset):
             Same dataset in class:`NumpyDataset` format.
 
         """
+        # check for numeric types
+        dtypes = list(set([i.dtype for i in self.roles.values()]))
+        self.dtype = cp.find_common_type(dtypes, [])
+
+        for f in self.roles:
+            self._roles[f].dtype = self.dtype
+
+        assert cp.issubdtype(self.dtype, cp.number), 'Support only numeric types in Cupy dataset.'
+
         # check for empty
         data = None if self.data is None else cp.asarray(self.data.values)
         roles = self.roles
