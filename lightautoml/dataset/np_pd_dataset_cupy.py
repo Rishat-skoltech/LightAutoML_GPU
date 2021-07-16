@@ -276,7 +276,6 @@ class NumpyDataset(LAMLDataset):
 
         return CupyDataset(data, features, roles, task, **params)
 
-
     def to_csr(self) -> 'CSRSparseDataset':
         """Convert to csr.
 
@@ -328,6 +327,7 @@ class NumpyDataset(LAMLDataset):
 
         """
         return dataset.to_numpy()
+
 
 @record_history(enabled=False)
 class CupyDataset(NumpyDataset):
@@ -404,7 +404,8 @@ class CupyDataset(NumpyDataset):
                 - dict.
 
         """
-        assert data is None or type(data) is np.ndarray or type(data) is cp.ndarray, 'Cupy dataset support only np.ndarray/cp.ndarray features'
+        assert data is None or type(data) is np.ndarray or type(
+            data) is cp.ndarray, 'Cupy dataset support only np.ndarray/cp.ndarray features'
 
         if type(data) == np.ndarray:
             data = cp.asarray(data)
@@ -486,14 +487,18 @@ class CupyDataset(NumpyDataset):
             Same dataset in PandasDataset format.
         """
         # check for empty case
-        data = None if self.data is None else cudf.DataFrame(self.data, columns=self.features, nan_as_null=False)
+        data = None if self.data is None else cudf.DataFrame()
+        if data is not None:
+            data_gpu = cudf.DataFrame()
+            for i, col in enumerate(self.features):
+                data_gpu[col] = cudf.Series(self.data[:,i], nan_as_null=False)
+            data = data_gpu
         roles = self.roles
         # target and etc ..
         params = dict(((x, Series(self.__dict__[x])) for x in self._array_like_attrs))
         task = self.task
 
         return CudfDataset(data, roles, task, **params)
-
 
     @staticmethod
     def from_dataset(dataset: Dataset) -> 'CupyDataset':
@@ -504,6 +509,7 @@ class CupyDataset(NumpyDataset):
 
         """
         return dataset.to_numpy().to_cupy()
+
 
 @record_history(enabled=False)
 class CSRSparseDataset(NumpyDataset):
@@ -862,7 +868,7 @@ class PandasDataset(LAMLDataset):
             Same dataset in class:`CudfDataset` format.
         """
 
-        data = cudf.DataFrame(self.data, nan_as_null=False)
+        data = self.data
         roles = self.roles
         task = self.task
 
@@ -888,6 +894,7 @@ class PandasDataset(LAMLDataset):
 
         """
         return (len(self.data) - self.data.count()).sum()
+
 
 @record_history(enabled=False)
 class CudfDataset(PandasDataset):
@@ -924,7 +931,6 @@ class CudfDataset(PandasDataset):
         if data is not None:
             self.set_data(data, None, roles)
 
-
     def set_data(self, data: DataFrame, features: None, roles: RolesDict):
         """Inplace set data, features, roles for empty dataset.
 
@@ -936,7 +942,10 @@ class CudfDataset(PandasDataset):
         """
 
         if isinstance(data, pd.DataFrame):
-            data = cudf.DataFrame(data)
+            data_gpu = cudf.DataFrame()
+            for col in data.columns:
+                data_gpu[col] = cudf.Series(data[col].values, nan_as_null=False)
+            data = data_gpu
         elif isinstance(data, cudf.DataFrame):
             pass
         else:
@@ -953,7 +962,7 @@ class CudfDataset(PandasDataset):
         if self.group is not None:
             self.group = cp.asarray(self.group)
 
-        #self._check_dtype() TEMPORARILY FREEZE DTYPE CHECK
+        # self._check_dtype() TEMPORARILY FREEZE DTYPE CHECK
 
     def _check_dtype(self):
         """Check if dtype in .set_data is ok and cast if not."""
@@ -978,7 +987,7 @@ class CudfDataset(PandasDataset):
             dt_role = self.roles[i]
             if not (self.data.dtypes[i] is np.datetime64):
                 self.data[i] = cudf.to_datetime(self.data[i], format=dt_role.format, unit=dt_role.unit,
-                                              origin=dt_role.origin, cache=True)
+                                                origin=dt_role.origin, cache=True)
 
             self.dtypes[i] = np.datetime64
 
@@ -1142,6 +1151,7 @@ class CudfDataset(PandasDataset):
         """
         return (len(self.data) - self.data.count()).sum()
 
+
 @record_history(enabled=False)
 class DaskCudfDataset(LAMLDataset):
     """Dataset that contains `dask_cudf.core.dataframe.DataFrame` features and ` dask_cudf.core.series.Series` targets."""
@@ -1221,7 +1231,7 @@ class DaskCudfDataset(LAMLDataset):
 
         """
         raise NotImplementedError
-        #return data.iloc[k]
+        # return data.iloc[k]
 
     @staticmethod
     def _get_cols(data: DataFrame, k: IntIdx) -> FrameOrSeries:
@@ -1236,7 +1246,7 @@ class DaskCudfDataset(LAMLDataset):
 
         """
         raise NotImplementedError
-        #return data.iloc[:, k]
+        # return data.iloc[:, k]
 
     @classmethod
     def _get_2d(cls, data: DataFrame, k: Tuple[IntIdx, IntIdx]) -> FrameOrSeries:
@@ -1251,9 +1261,9 @@ class DaskCudfDataset(LAMLDataset):
 
         """
         raise NotImplementedError
-        #rows, cols = k
+        # rows, cols = k
 
-        #return data.iloc[rows, cols]
+        # return data.iloc[rows, cols]
 
     @staticmethod
     def _set_col(data: DataFrame, k: int, val: Union[Series, np.ndarray]):
@@ -1267,7 +1277,7 @@ class DaskCudfDataset(LAMLDataset):
         """
         raise NotImplementedError
 
-        #data.iloc[:, k] = val
+        # data.iloc[:, k] = val
 
     def to_cudf(self):
         """Convert to class:`NumpyDataset`.
