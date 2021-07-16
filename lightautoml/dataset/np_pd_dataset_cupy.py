@@ -271,7 +271,7 @@ class NumpyDataset(LAMLDataset):
         roles = self.roles
         features = self.features
         # target and etc ..
-        params = dict(((x, self.__dict__[x]) for x in self._array_like_attrs))
+        params = dict(((x, cp.asarray(self.__dict__[x])) for x in self._array_like_attrs))
         task = self.task
 
         return CupyDataset(data, features, roles, task, **params)
@@ -378,6 +378,8 @@ class CupyDataset(NumpyDataset):
 
         """
         self._initialize(task, **kwargs)
+        for k in kwargs:
+            self.__dict__[k] = cp.asarray(kwargs[k])
         if data is not None:
             self.set_data(data, features, roles)
 
@@ -448,7 +450,7 @@ class CupyDataset(NumpyDataset):
         roles = self.roles
         features = self.features
         # target and etc ..
-        params = dict(((x, self.__dict__[x]) for x in self._array_like_attrs))
+        params = dict(((x, cp.asnumpy(self.__dict__[x])) for x in self._array_like_attrs))
         task = self.task
 
         return NumpyDataset(data, features, roles, task, **params)
@@ -495,7 +497,7 @@ class CupyDataset(NumpyDataset):
             data = data_gpu
         roles = self.roles
         # target and etc ..
-        params = dict(((x, Series(self.__dict__[x])) for x in self._array_like_attrs))
+        params = dict(((x, cudf.Series(self.__dict__[x])) for x in self._array_like_attrs))
         task = self.task
 
         return CudfDataset(data, roles, task, **params)
@@ -508,7 +510,7 @@ class CupyDataset(NumpyDataset):
             Cupy dataset.
 
         """
-        return dataset.to_numpy().to_cupy()
+        return dataset.to_cupy()
 
 
 @record_history(enabled=False)
@@ -872,7 +874,7 @@ class PandasDataset(LAMLDataset):
         roles = self.roles
         task = self.task
 
-        params = dict(((x, self.__dict__[x].values) for x in self._array_like_attrs))
+        params = dict(((x, cudf.Series(self.__dict__[x].values, nan_as_null=False)) for x in self._array_like_attrs))
 
         return CudfDataset(data, roles, task, **params)
 
@@ -928,6 +930,8 @@ class CudfDataset(PandasDataset):
                     kwargs[k] = data[f].reset_index(drop=True)
                     roles[f] = DropRole()
         self._initialize(task, **kwargs)
+        for k in kwargs:
+            self.__dict__[k] = cudf.Series(kwargs[k])
         if data is not None:
             self.set_data(data, None, roles)
 
@@ -953,14 +957,7 @@ class CudfDataset(PandasDataset):
 
         super(CudfDataset.__bases__[0], self).set_data(data, features, roles)
 
-        if self.target is not None:
-            self.target = cp.asarray(self.target)
-        if self.folds is not None:
-            self.folds = cp.asarray(self.folds)
-        if self.weights is not None:
-            self.weights = cp.asarray(self.weights)
-        if self.group is not None:
-            self.group = cp.asarray(self.group)
+
 
         # self._check_dtype() TEMPORARILY FREEZE DTYPE CHECK
 
@@ -1072,7 +1069,7 @@ class CudfDataset(PandasDataset):
         roles = self.roles
         features = self.features
         # target and etc ..
-        params = dict(((x, self.__dict__[x].values) for x in self._array_like_attrs))
+        params = dict(((x, cp.asnumpy(self.__dict__[x].values)) for x in self._array_like_attrs))
         task = self.task
         return NumpyDataset(data, features, roles, task, **params)
 
@@ -1104,7 +1101,7 @@ class CudfDataset(PandasDataset):
         roles = self.roles
         task = self.task
 
-        params = dict(((x, self.__dict__[x].values) for x in self._array_like_attrs))
+        params = dict(((x, Series(cp.asnumpy(self.__dict__[x].values))) for x in self._array_like_attrs))
 
         return PandasDataset(data, roles, task, **params)
 
@@ -1184,6 +1181,8 @@ class DaskCudfDataset(LAMLDataset):
                     kwargs[k] = data[f].reset_index(drop=True)
                     roles[f] = DropRole()
         self._initialize(task, **kwargs)
+        for k in kwargs:
+            self.__dict__[k] = cudf.Series(kwargs[k])
         if data is not None:
             self.set_data(data, None, roles)
 
