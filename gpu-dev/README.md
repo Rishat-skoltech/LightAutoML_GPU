@@ -19,7 +19,7 @@ conda activate Pyth38
 2. To clone the project to your own local machine:
 ```bash
 git clone https://github.com/Rishat-skoltech/LightAutoML_GPU.git
-cd LightAutoML
+cd LightAutoML_GPU
 ```
 
 3. Install LightAutoML in develop mode:

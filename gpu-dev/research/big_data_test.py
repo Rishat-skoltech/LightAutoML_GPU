@@ -50,7 +50,7 @@ def generate_dummy_parquet():
 
 if __name__ == '__main__':
     if (not os.path.exists('./data/big_dummy.parquet')):
-        if (len(sys.argv)>1 and sys.argv[1] != "generate_data"):
+        if (len(sys.argv)==1 or (len(sys.argv)>1 and sys.argv[1] != "generate_data")):
             print("this script generates 2.9 GB of dummy data, then it's going to be read 3 times to take up 5.7 GB of memory, if you okay with it launch it again with arg 'generate_data'")
             exit()
         else:
