@@ -10,7 +10,6 @@ import pandas as pd
 import cudf
 import dask_cudf
 
-from log_calls import record_history
 from pandas import Series, DataFrame
 from scipy import sparse
 
@@ -38,7 +37,6 @@ Dataset = TypeVar("Dataset", bound=LAMLDataset)
 
 # sparse - do not replace init and set data, but move type assert in checks?
 
-@record_history(enabled=False)
 class NumpyDataset(LAMLDataset):
     """Dataset, that contains info in np.ndarray format."""
     # TODO: Checks here
@@ -329,7 +327,6 @@ class NumpyDataset(LAMLDataset):
         return dataset.to_numpy()
 
 
-@record_history(enabled=False)
 class CupyDataset(NumpyDataset):
 
     def _check_dtype(self):
@@ -513,7 +510,6 @@ class CupyDataset(NumpyDataset):
         return dataset.to_cupy()
 
 
-@record_history(enabled=False)
 class CSRSparseDataset(NumpyDataset):
     """Dataset that contains sparse features and np.ndarray targets."""
     _init_checks = ()
@@ -649,7 +645,6 @@ class CSRSparseDataset(NumpyDataset):
         return dataset.to_csr()
 
 
-@record_history(enabled=False)
 class PandasDataset(LAMLDataset):
     """Dataset that contains `pd.DataFrame` features and `pd.Series` targets."""
     _init_checks = ()
@@ -898,7 +893,6 @@ class PandasDataset(LAMLDataset):
         return (len(self.data) - self.data.count()).sum()
 
 
-@record_history(enabled=False)
 class CudfDataset(PandasDataset):
     """Dataset that contains `cudf.core.dataframe.DataFrame` features and ` cudf.core.series.Series` targets."""
     _init_checks = ()
@@ -1166,7 +1160,6 @@ class CudfDataset(PandasDataset):
         return (len(self.data) - self.data.count()).sum()
 
 
-@record_history(enabled=False)
 class DaskCudfDataset(LAMLDataset):
     """Dataset that contains `dask_cudf.core.dataframe.DataFrame` features and ` dask_cudf.core.series.Series` targets."""
     _init_checks = ()
