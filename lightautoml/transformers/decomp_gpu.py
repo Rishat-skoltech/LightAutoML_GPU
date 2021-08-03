@@ -5,7 +5,6 @@ from typing import Union, List, Optional
 import numpy as np
 import cupy as cp
 
-from log_calls import record_history
 from cuml import PCA, TruncatedSVD
 
 from .base import LAMLTransformer
@@ -19,7 +18,6 @@ CupyCSR = Union[CupyDataset, CSRSparseDataset]
 
 
 # TODO: move all checks to the utils
-@record_history(enabled=False)
 def numeric_check(dataset: LAMLDataset):
     """Check if all passed vars are categories.
 
@@ -37,7 +35,6 @@ def numeric_check(dataset: LAMLDataset):
 
 
 # TODO: merge into one transformer
-@record_history(enabled=False)
 class PCATransformer(LAMLTransformer):
     """PCA."""
 
@@ -116,7 +113,6 @@ class PCATransformer(LAMLTransformer):
         return output
 
 
-@record_history(enabled=False)
 class SVDTransformer(LAMLTransformer):
     """TruncatedSVD."""
 
