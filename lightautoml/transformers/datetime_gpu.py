@@ -10,7 +10,6 @@ import cupy as cp
 import cudf
 import pandas as pd
 
-from log_calls import record_history
 
 from .base import LAMLTransformer
 from ..dataset.base import LAMLDataset
@@ -26,7 +25,6 @@ date_attrs = {'y': 'year', 'm': 'month',
               'sec': 'second', 'ms': 'microsecond', 'ns': 'nanosecond'}
 
 
-@record_history(enabled=False)
 def datetime_check(dataset: LAMLDataset):
     """Check if all passed vars are datetimes.
 
@@ -43,7 +41,6 @@ def datetime_check(dataset: LAMLDataset):
         assert roles[f].name == 'Datetime', 'Only datetimes accepted in this transformer'
 
 
-@record_history(enabled=False)
 class TimeToNum(LAMLTransformer):
     """
     Basic conversion strategy, used in selection one-to-one transformers.
@@ -81,8 +78,16 @@ class TimeToNum(LAMLTransformer):
                                               periods=1,
                                               freq="d")).repeat(len(data)).reset_index()[0]
 
-        timedelta = cudf.Series(pd.Series(np.timedelta64(1, self.basic_interval))).repeat(len(data)).reset_index()[0]
-        new_arr = ((data - time_diff) / timedelta).values.astype(cp.float32)
+        #pandas_int = np.timedelta64(1, self.basic_interval)
+        #print(cudf.Series(pandas_int))
+
+        timedelta = cudf.Series(np.timedelta64(1, self.basic_interval)).repeat(len(data)).reset_index()[0]
+
+        new_arr = cp.empty(data.shape)
+        for n, i in enumerate(data.columns):
+
+            new_arr[:,n] = ((data[i] - time_diff) / timedelta).values.astype(cp.float32)
+            #print(type(new_arr))
 
         # create resulted
         output = dataset.empty().to_cupy()
@@ -91,7 +96,6 @@ class TimeToNum(LAMLTransformer):
         return output
 
 
-@record_history(enabled=False)
 class BaseDiff(LAMLTransformer):
     """
     Basic conversion strategy, used in selection one-to-one transformers.
@@ -157,25 +161,26 @@ class BaseDiff(LAMLTransformer):
         dataset = dataset.to_cudf()
         data = dataset.data[self.diff_names]
         base_cols = dataset.data[self.base_names]
-
         feats_block = []
 
-        time_delta = cudf.Series(pd.Series(np.timedelta64(1, self.basic_interval))).repeat(len(data)).reset_index()[0]
+        time_delta = cudf.Series(np.timedelta64(1, self.basic_interval)).repeat(len(data)).reset_index()[0]
+
+        new_arr = cp.empty(data.shape)
+
 
         for col in base_cols.columns:
-            new_arr = ((data - base_cols[[col]])/time_delta).astype(cp.float32)
+            for n, i in enumerate(data.columns):
+                new_arr[:,n] = ((data[i] - base_cols[col])/time_delta).values.astype(cp.float32)
             feats_block.append(new_arr)
-
         feats_block = cp.concatenate(feats_block, axis=1)
 
         # create resulted
-        output = dataset.empty().to_numpy()
+        output = dataset.empty().to_cupy()
         output.set_data(feats_block, self.features, NumericRole(dtype=cp.float32))
 
         return output
 
 
-@record_history(enabled=False)
 class DateSeasons(LAMLTransformer):
     """
     Basic conversion strategy, used in selection one-to-one transformers.
@@ -243,7 +248,7 @@ class DateSeasons(LAMLTransformer):
         # checks if exist
         super().transform(dataset)
         # convert to accepted format and get attributes
-        dataset = dataset.to_pandas()
+        dataset = dataset.to_cudf()
         df = dataset.data
         roles = dataset.roles
 
@@ -252,7 +257,8 @@ class DateSeasons(LAMLTransformer):
         n = 0
         for col in dataset.features:
             for seas in self.transformations[col]:
-                new_arr[:, n] = getattr(df[col].dt, date_attrs[seas])
+                vals = getattr(df[col].dt, date_attrs[seas]).values.astype(cp.int32)
+                new_arr[:, n] = vals
                 n += 1
 
             if roles[col].country is not None:
