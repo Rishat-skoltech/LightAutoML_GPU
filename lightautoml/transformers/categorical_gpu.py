@@ -4,11 +4,11 @@ from itertools import combinations
 from typing import Optional, Union, List, Sequence, cast
 
 import cupy as cp
+from cupyx import scatter_add
 import cudf
 
-from log_calls import record_history
-
-from cuml.preprocessing import OneHotEncoder
+from cuml.preprocessing import OneHotEncoder as one_hot
+from cuml.preprocessing.LabelEncoder import LabelEncoder as label_enc_cuml
 
 from .base import LAMLTransformer
 from ..dataset.base import LAMLDataset
@@ -20,7 +20,6 @@ NumericalDataset = Union[CupyDataset, CudfDataset, DaskCudfDataset]
 NumericalOrSparse = Union[CupyDataset, CSRSparseDataset]
 
 
-@record_history(enabled=False)
 def categorical_check(dataset: LAMLDataset):
     """Check if all passed vars are categories.
 
@@ -36,7 +35,6 @@ def categorical_check(dataset: LAMLDataset):
         assert roles[f].name == 'Category', 'Only categories accepted in this transformer'
 
 
-@record_history(enabled=False)
 def oof_task_check(dataset: LAMLDataset):
     """Check if all passed vars are categories.
 
@@ -48,7 +46,6 @@ def oof_task_check(dataset: LAMLDataset):
     assert task.name in ['binary', 'reg'], 'Only binary and regression tasks supported in this transformer'
 
 
-@record_history(enabled=False)
 def multiclass_task_check(dataset: LAMLDataset):
     """Check if all passed vars are categories.
 
@@ -62,7 +59,6 @@ def multiclass_task_check(dataset: LAMLDataset):
     assert task.name in ['multiclass'], 'Only multiclass tasks supported in this transformer'
 
 
-@record_history(enabled=False)
 def encoding_check(dataset: LAMLDataset):
     """Check if all passed vars are categories.
 
@@ -78,7 +74,6 @@ def encoding_check(dataset: LAMLDataset):
             f, roles[f])
 
 
-@record_history(enabled=False)
 class LabelEncoder(LAMLTransformer):
     """Simple LabelEncoder in order of frequency.
 
@@ -89,6 +84,8 @@ class LabelEncoder(LAMLTransformer):
     _fit_checks = (categorical_check,)
     _transform_checks = ()
     _fname_prefix = 'le'
+
+    # _output_role = CategoryRole(np.int32, label_encoded=True)
     _fillna_val = 0
 
     def __init__(self, subs: Optional[int] = None, random_state: int = 42):
@@ -146,9 +143,11 @@ class LabelEncoder(LAMLTransformer):
             role = roles[i]
             # TODO: think what to do with this warning
             co = role.unknown
+
             cnts = subs[i].value_counts(dropna=False).reset_index() \
-                .sort_values([i, 'index'], ascending=[False, True]).set_index('index')
-            vals = cnts[cnts > co].index.values
+                .sort_values([i, 'index'], ascending=[False, True])
+
+            vals = cnts[cnts[i] > co]['index']
             self.dicts[i] = cudf.Series(cp.arange(vals.shape[0], dtype=cp.int32) + 1, index=vals)
 
         return self
@@ -185,8 +184,6 @@ class LabelEncoder(LAMLTransformer):
 
         return output
 
-
-@record_history(enabled=False)
 class OHEEncoder(LAMLTransformer):
     """
     Simple OneHotEncoder over label encoded categories.
@@ -200,7 +197,7 @@ class OHEEncoder(LAMLTransformer):
         """Features list."""
         return self._features
 
-    def __init__(self, make_sparse: Optional[bool] = None, total_feats_cnt: Optional[int] = None, dtype: type = cp.float32):
+    def __init__(self, make_sparse: Optional[bool] = False, total_feats_cnt: Optional[int] = None, dtype: type = cp.float32):
         """
 
         Args:
@@ -237,8 +234,8 @@ class OHEEncoder(LAMLTransformer):
         # convert to accepted dtype and get attributes
         dataset = dataset.to_cupy()
         data = dataset.data
-        max_idx = data.max(axis=0)
-        min_idx = data.min(axis=0)
+        max_idx = cp.asnumpy(data.max(axis=0))
+        min_idx = cp.asnumpy(data.min(axis=0))
 
         # infer make sparse
         if self.make_sparse is None:
@@ -246,16 +243,16 @@ class OHEEncoder(LAMLTransformer):
             self.make_sparse = fill_rate < 0.2
 
         # create ohe
-        self.ohe = OneHotEncoder(categories=[cp.arange(x, y + 1, dtype=cp.int32) for (x, y) in zip(min_idx, max_idx)],
-                                 dtype=self.dtype, sparse=self.make_sparse,
-                                 handle_unknown='ignore')
+
+        self.ohe = one_hot(categories='auto',
+                           dtype=self.dtype, sparse=self.make_sparse,
+                           handle_unknown='ignore')
         self.ohe.fit(data)
 
         features = []
         for cats, name in zip(self.ohe.categories_, dataset.features):
-            # cats = cats[cats != 1]
-            features.extend(['ohe_{0}__{1}'.format(x, name) for x in cats])
-
+            pd_cats = cats.to_pandas()
+            features.extend(['ohe_{0}__{1}'.format(x, name) for x in pd_cats])
         self._features = features
 
         return self
@@ -286,11 +283,10 @@ class OHEEncoder(LAMLTransformer):
             output = output.to_csr()
 
         output.set_data(data, self.features, NumericRole(self.dtype))
+
         return output
 
-
-@record_history(enabled=False)
-class FreqEncoder(LabelEncoder):
+class FreqEncoder(LAMLTransformer):
     """
     Labels are encoded with frequency in train data.
 
@@ -305,7 +301,6 @@ class FreqEncoder(LabelEncoder):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # TODO: check if it is necessary to change dtype to cp.float32
         self._output_role = NumericRole(cp.float32)
 
     def fit(self, dataset: NumericalDataset):
@@ -319,7 +314,7 @@ class FreqEncoder(LabelEncoder):
             
         """
         # set transformer names and add checks
-        LAMLTransformer.fit(self, dataset)
+        super().fit(dataset)
         # set transformer features
 
         # convert to accepted dtype and get attributes
@@ -335,8 +330,38 @@ class FreqEncoder(LabelEncoder):
 
         return self
 
+    def transform(self, dataset: NumericalDataset) -> CupyDataset:
+        """Transform categorical dataset to int labels.
 
-@record_history(enabled=False)
+        Args:
+            dataset: Cudf or Cupy dataset of categorical features.
+
+        Returns:
+            Numpy dataset with encoded labels.
+
+        """
+        # checks here
+        super().transform(dataset)
+        # convert to accepted dtype and get attributes
+        dataset = dataset.to_cudf()
+        df = dataset.data
+
+        # transform
+        new_arr = cp.empty(dataset.shape, dtype=self._output_role.dtype)
+
+        for n, i in enumerate(df.columns):
+            # to be compatible with OrdinalEncoder
+            if i in self.dicts:
+                new_arr[:, n] = df[i].map(self.dicts[i]).fillna(self._fillna_val).values
+            else:
+                new_arr[:, n] = df[i].values.astype(self._output_role.dtype)
+
+        # create resulted
+        output = dataset.empty().to_cupy()
+        output.set_data(new_arr, self.features, self._output_role)
+
+        return output
+
 class TargetEncoder(LAMLTransformer):
     """
     Out-of-fold target encoding.
@@ -418,8 +443,7 @@ class TargetEncoder(LAMLTransformer):
         dataset = dataset.to_cupy()
         data = dataset.data
 
-        # TODO: check if it is necessary to change dtype to cp.int32
-        target = cp.asarray(dataset.target).astype(cp.in32)
+        target = cp.asarray(dataset.target).astype(cp.int32)
         score_func = self.binary_score_func if dataset.task.name == 'binary' else self.reg_score_func
 
         folds = cp.asarray(dataset.folds)
@@ -433,10 +457,10 @@ class TargetEncoder(LAMLTransformer):
         f_count = cp.zeros(n_folds, dtype=cp.float32)
 
         # TEST THIS PART
-        f_sum += cp.bincount(folds, target, minlength=f_sum.size)
-        f_count += cp.bincount(folds, minlength=f_count.size)
-        # cp.add.at(f_sum, folds, target)
-        # cp.add.at(f_count, folds, 1)
+        #f_sum += cp.bincount(folds, target, minlength=f_sum.size)
+        #f_count += cp.bincount(folds, minlength=f_count.size)
+        scatter_add(f_sum, folds, target)
+        scatter_add(f_count, folds, 1)
 
         folds_prior = (f_sum.sum() - f_sum) / (f_count.sum() - f_count)
         oof_feats = cp.zeros(data.shape, dtype=cp.float32)
@@ -445,15 +469,12 @@ class TargetEncoder(LAMLTransformer):
             vec = data[:, n]
 
             # calc folds stats
-            # enc_dim = vec.max() + 1
+            enc_dim = int(vec.max() + 1)
+            f_sum = cp.zeros((enc_dim, n_folds), dtype=cp.float64)
+            f_count = cp.zeros((enc_dim, n_folds), dtype=cp.float64)
 
-            # TODO: test this part
-            folds_vals = cp.unique(folds)
-            vec_vals = cp.unique(vec)
-            f_count = cp.array([[(vec[folds == f] == v).sum() for f in \
-                                 folds_vals] for v in vec_vals])
-            f_sum = cp.array([[target[((folds == f) * (vec == v))].sum() for f in \
-                               folds_vals] for v in vec_vals])
+            scatter_add(f_sum, (vec, folds), target)
+            scatter_add(f_count, (vec, folds), 1)
 
             # calc total stats
             t_sum = f_sum.sum(axis=1, keepdims=True)
@@ -508,7 +529,6 @@ class TargetEncoder(LAMLTransformer):
         return output
 
 
-@record_history(enabled=False)
 class MultiClassTargetEncoder(LAMLTransformer):
     """
     Out-of-fold target encoding for multiclass task.
@@ -568,25 +588,23 @@ class MultiClassTargetEncoder(LAMLTransformer):
         dataset = dataset.to_cupy()
         data = dataset.data
         target = cp.asarray(dataset.target).astype(cp.int32)
-        n_classes = target.max() + 1
+        n_classes = int(target.max() + 1)
         self.n_classes = n_classes
 
         folds = cp.asarray(dataset.folds)
-        n_folds = folds.max() + 1
+        n_folds = int(folds.max() + 1)
         alphas = cp.array(self.alphas)[cp.newaxis, cp.newaxis, :]
 
         self.encodings = []
         # prior
         prior = cast(cp.ndarray, cp.arange(n_classes)[:, cp.newaxis] == target).mean(axis=1)
         # folds prior
-        f_count = cp.zeros((1, n_folds), dtype=int)
 
-        # TODO: test this part
-        f_sum = cp.array([[(target[folds == f] == t).sum() for f in cp.unique(folds)] for t in cp.unique(target)])
-        f_count[0] = cp.bincount(folds, minlength=f_count[0].size).astype(int)
+        f_sum = cp.zeros((n_classes, n_folds), dtype=cp.float64)
+        f_count = cp.zeros((1, n_folds), dtype=cp.float64)
 
-        f_count = f_count.astype(cp.float32)
-        f_sum = f_sum.astype(cp.float32)
+        scatter_add(f_sum, (target, folds), 1)
+        scatter_add(f_count, (0, folds), 1)
 
         # N_classes x N_folds
         folds_prior = ((f_sum.sum(axis=1, keepdims=True) - f_sum) / (f_count.sum(axis=1, keepdims=True) - f_count)).T
@@ -601,22 +619,12 @@ class MultiClassTargetEncoder(LAMLTransformer):
             vec = data[:, n]
 
             # calc folds stats
-            # enc_dim = vec.max() + 1
+            enc_dim = int(vec.max() + 1)
+            f_sum = cp.zeros((enc_dim, n_classes, n_folds), dtype=cp.float64)
+            f_count = cp.zeros((enc_dim, 1, n_folds), dtype=cp.float64)
 
-            # TODO: test this part
-            target_vals = cp.unique(target)
-            folds_vals = cp.unique(folds)
-            vec_vals = cp.unique(vec)
-
-            f_sum = cp.array([[[((vec == v) * (target == t) * (folds == f)).sum() \
-                                for f in folds_vals] \
-                               for t in target_vals] \
-                              for v in vec_vals])
-            f_count = cp.array([[[((folds == f) * (vec == v)).sum() for f in folds_vals]] \
-                                for v in vec_vals])
-
-            f_sum = f_sum.astype(cp.float32)
-            f_count = f_count.astype(cp.float32)
+            scatter_add(f_sum, (vec, target, folds), 1)
+            scatter_add(f_count, (vec, 0, folds), 1)
 
             # calc total stats
             t_sum = f_sum.sum(axis=2, keepdims=True)
@@ -675,8 +683,7 @@ class MultiClassTargetEncoder(LAMLTransformer):
         return output
 
 
-@record_history(enabled=False)
-class CatIntersections(LabelEncoder):
+class CatIntersectstions(LabelEncoder):
     """Build label encoded intersections of categorical variables."""
 
     _fit_checks = (categorical_check,)
@@ -715,9 +722,9 @@ class CatIntersections(LabelEncoder):
 
         for col in cols:
             if res is None:
-                res = df[col]
+                res = df[col].astype('str')
             else:
-                res = res + delim + df[col]
+                res = res + delim + df[col].astype('str')
 
         res = res.hash_values()
 
@@ -736,15 +743,17 @@ class CatIntersections(LabelEncoder):
         df = dataset.data
 
         roles = {}
+        self.res_tensor = {}
         new_df = cudf.DataFrame(index=df.index)
         for comb in self.intersections:
             name = '({0})'.format('__'.join(comb))
             new_df[name] = self._make_category(df, comb)
+
             roles[name] = CategoryRole(object, unknown=max((dataset.roles[x].unknown for x in comb)), label_encoded=True)
 
         output = dataset.empty()
         output.set_data(new_df, new_df.columns, roles)
-
+        self.out_tensor = output
         return output
 
     def fit(self, dataset: NumericalDataset):
@@ -781,8 +790,6 @@ class CatIntersections(LabelEncoder):
         inter_dataset = self._build_df(dataset)
         return super().transform(inter_dataset)
 
-
-@record_history(enabled=False)
 class OrdinalEncoder(LabelEncoder):
     """
     Encoding ordinal categories into numbers.
@@ -825,8 +832,42 @@ class OrdinalEncoder(LabelEncoder):
                 co = role.unknown
                 cnts = subs[i].value_counts(dropna=True)
                 cnts = cnts[cnts > co].reset_index()
-                cnts = cudf.Series(cnts['index'].astype(str).rank().values, index=cnts['index'].values)
+                cnts = cudf.Series(cnts['index'].astype(str).rank().values, index=cnts['index'])
                 cnts = cnts.append(cudf.Series([cnts.shape[0] + 1], index=[cp.nan]))
                 self.dicts[i] = cnts
 
         return self
+"""
+
+    def transform(self, dataset: NumericalDataset) -> CupyDataset:
+        Transform categorical dataset to int labels.
+
+        Args:
+            dataset: Cudf or Cupy dataset of categorical features.
+
+        Returns:
+            Numpy dataset with encoded labels.
+
+        #
+        # checks here
+        super(OrdinalEncoder.__bases__[0], self).transform(dataset)
+        # convert to accepted dtype and get attributes
+        dataset = dataset.to_cudf()
+        df = dataset.data
+
+        # transform
+        new_arr = cp.empty(dataset.shape, dtype=self._output_role.dtype)
+
+        for n, i in enumerate(df.columns):
+            # to be compatible with OrdinalEncoder
+            if i in self.dicts:
+                new_arr[:, n] = df[i].map(self.dicts[i]).fillna(self._fillna_val).values
+            else:
+                new_arr[:, n] = df[i].values.astype(self._output_role.dtype)
+
+        # create resulted
+        output = dataset.empty().to_cupy()
+        output.set_data(new_arr, self.features, self._output_role)
+
+        return output
+"""
