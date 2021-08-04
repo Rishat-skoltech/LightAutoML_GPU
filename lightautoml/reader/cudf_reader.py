@@ -1,6 +1,7 @@
 """Cudf reader."""
 
 from typing import Any, Union, Dict, List, Sequence, TypeVar, Optional, cast
+from copy import deepcopy
 
 import numpy as np
 
@@ -13,8 +14,6 @@ from cudf.core.series import Series
 from .base import PandasToPandasReader
 from ..dataset.cp_cudf_dataset import CudfDataset
 
-from .guess_roles import get_numeric_roles_stat, calc_encoding_rules, rule_based_roles_guess, \
-    get_category_roles_stat, calc_category_rules, rule_based_cat_handler_guess
 from ..dataset.base import valid_array_attributes, array_attr_roles
 from ..dataset.roles import ColumnRole, DropRole, DatetimeRole, CategoryRole, NumericRole
 from ..dataset.utils import roles_parser
@@ -34,8 +33,6 @@ UserDefinedRolesSequence = Sequence[UserDefinedRole]
 UserRolesDefinition = Optional[Union[UserDefinedRole, UserDefinedRolesDict,
                                UserDefinedRolesSequence]]
 
-#this decorator works bad with a distributed client
-#@record_history(enabled=False)
 class CudfReader(PandasToPandasReader):
     """
     Reader to convert :class:`~cudf.core.DataFrame` to
@@ -79,6 +76,7 @@ class CudfReader(PandasToPandasReader):
 
         for feat in parsed_roles:
             r = parsed_roles[feat]
+            #print(r)
             if isinstance(r, str):
                 # get default role params if defined
                 r = self._get_default_role_from_str(r)
@@ -94,9 +92,10 @@ class CudfReader(PandasToPandasReader):
 
             # add new role
             parsed_roles[feat] = r
-
+            
         assert 'target' in kwargs, 'Target should be defined'
         self.target = kwargs['target'].name
+        
         kwargs['target'] = self._create_target(kwargs['target'])
 
         # TODO: Check target and task
@@ -147,26 +146,35 @@ class CudfReader(PandasToPandasReader):
                 self._used_features.append(feat)
             else:
                 self._dropped_features.append(feat)
-
+        
         assert len(self.used_features) > 0, 'All features are excluded for some reasons'
         # assert len(self.used_array_attrs) > 0, 'At least target should be defined in train dataset'
+
         # create folds
-        '''folds = set_sklearn_folds(self.task, kwargs['target'].values,
+        '''
+        folds = set_sklearn_folds_gpu(self.task, kwargs['target'],
                                   cv=self.cv, random_state=self.random_state,
                                   group=None if 'group' not in kwargs else kwargs['group'])
         if folds is not None:
-            kwargs['folds'] = Series(folds, index=train_data.index)'''
+            kwargs['folds'] = folds
+        '''
         # get dataset
+        
         dataset = CudfDataset(train_data[self.used_features], self.roles,
                               task=self.task, **kwargs)
-        '''if self.advanced_roles:
+        '''
+        if self.advanced_roles:
+            
             new_roles = self.advanced_roles_guess(dataset, manual_roles=parsed_roles)
+            
             droplist = [x for x in new_roles if new_roles[x].name == 'Drop' and\
                                                 not self._roles[x].force_input]
+            
             self.upd_used_features(remove=droplist)
             self._roles = {x: new_roles[x] for x in new_roles if x not in droplist}
-            dataset = PandasDataset(train_data[self.used_features], self.roles,
-                                    task=self.task, **kwargs)'''
+            dataset = CudfDataset(train_data[self.used_features], self.roles,
+                                  task=self.task, **kwargs)
+        '''                        
         return dataset
 
     def _create_target(self, target: Series):
@@ -198,7 +206,7 @@ class CudfReader(PandasToPandasReader):
 
             # case - create mapping
             self.class_mapping = {n: x for (x, n) in enumerate(cp.asnumpy(unqiues))}
-            return target.map(self.class_mapping).astype(np.int32)
+            return target.map(self.class_mapping).astype(cp.int32)
 
         assert not target.isna().any(), 'Nan in target detected'
         return target
@@ -220,6 +228,13 @@ class CudfReader(PandasToPandasReader):
         # TODO: Plans for advanced roles guessing
         # check if default numeric dtype defined
         num_dtype = self._get_default_role_from_str('numeric').dtype
+        date_format = self._get_default_role_from_str('datetime').format
+        try:
+            _ = feature.dt
+            return DatetimeRole(np.datetime64, date_format=date_format)
+        except AttributeError:
+            pass
+
         # check if feature is number
         try:
             _ = feature.astype(num_dtype)
@@ -229,12 +244,7 @@ class CudfReader(PandasToPandasReader):
         except TypeError:
             pass
 
-        # check if default format is defined
-        date_format = self._get_default_role_from_str('datetime').format
-        # check if it's datetime
-        return DatetimeRole(np.datetime64, date_format=date_format) \
-                            if self._is_datetimable(feature, date_format) \
-                            else CategoryRole(object)
+        return CategoryRole(object)
 
     def read(self, data: DataFrame, features_names: Any = None,
              add_array_attrs: bool = False) -> CudfDataset:
@@ -303,27 +313,6 @@ class CudfReader(PandasToPandasReader):
         except ValueError:
             raise ValueError('Looks like given datetime parsing params are not correctly defined')
 
-    def _is_datetimable(self, feature: Series, date_format: str) -> bool:
-        """
-        See if feature can be converted to datetime.
-
-        Args:
-            feature: Column from dataset.
-            date_format: string with date format specification.
-
-        Returns:
-            ``True`` if feature can be converted to datetime type.
-        """
-        try:
-            _ = cast(cudf.Series, cudf.to_datetime(feature,
-                                                   infer_datetime_format=False,
-                                                   format=date_format)).dt
-            #_ = cast(pd.Series, pd.to_datetime(feature.to_pandas(),
-            #                                    infer_datetime_format=False,
-            #                                    format=date_format)).dt.tz_localize('UTC')
-            return True
-        except (ValueError, AttributeError):
-            return False
 
     def _apply_class_mapping(self, feature: Series,
                              data_index: List[int], col_name: str) -> Series:

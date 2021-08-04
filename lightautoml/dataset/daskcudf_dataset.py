@@ -1,11 +1,10 @@
 """Internal representation of dataset in dask_cudf format."""
 
-from typing import Union, Sequence, Optional, TypeVar
+from typing import Union, Sequence, Optional, TypeVar, Tuple
 
 import numpy as np
 import cupy as cp
-
-from log_calls import record_history
+import dask_cudf
 
 from dask_cudf.core import DataFrame, Series
 
@@ -23,26 +22,17 @@ DenseSparseArray = Union[cp.ndarray, sparse.csr_matrix]
 FrameOrSeries = Union[DataFrame, Series]
 Dataset = TypeVar('Dataset', bound=LAMLDataset)
 
-# possible checks list
-# valid shapes
-# target var is ok for task
-# pandas - roles for all columns are defined
-# numpy - roles and features are ok each other
-# numpy - roles and features are ok for data
-# features names does not contain __ - it's used to split processing names
-
-# sparse - do not replace init and set data, but move type assert in checks?
-
-#this decorator works bad with distributed client
-#@record_history(enabled=False)
 class DaskCudfDataset(CudfDataset):
     """Dataset that contains `dask_cudf.core.DataFrame` features and
        `dask_cudf..Series` targets."""
+    _init_checks = ()
+    _data_checks = ()
+    _concat_checks = ()
     _dataset_type = 'DaskCudfDataset'
 
     def __init__(self, data: Optional[DataFrame] = None,
                  roles: Optional[RolesDict] = None, task: Optional[Task] = None,
-                 npartitions: int = None, **kwargs: Series):
+                 **kwargs: Series):
         """Create dataset from `dask_cudf.core.DataFrame` and `dask_cudf.core.Series`
 
         Args:
@@ -54,7 +44,6 @@ class DaskCudfDataset(CudfDataset):
             **kwargs: Series, array like attrs target, group etc...
 
         """
-        self.npartitions = npartitions
         if roles is None:
             roles = {}
         # parse parameters
@@ -62,12 +51,36 @@ class DaskCudfDataset(CudfDataset):
         for f in roles:
             for k, r in zip(valid_array_attributes, array_attr_roles):
                 if roles[f].name == r:
-                    kwargs[k] = data[f].map_partitions(self._reset_index).persist()
+                    kwargs[k] = data[f].reset_index(drop=True).persist()
                     roles[f] = DropRole()
         self._initialize(task, **kwargs)
+        #for k in kwargs:
+        #    self.__dict__[k] = dask_cudf.Series(kwargs[k])
+        
+        size = len(data.index)
+        data['index'] = data.index
+        mapping = dict(zip( data.index.compute().values_host,np.arange(size) ))
+        data['index'] = data['index'].map(mapping).persist()  
+        data = data.set_index('index', drop=True, sorted=True)
+        
         if data is not None:
             self.set_data(data, None, roles)
 
+
+    @staticmethod
+    def _get_rows(data: DataFrame, k) -> FrameOrSeries:
+        """Define how to get rows slice.
+
+        Args:
+            data: Table with data.
+            k: Sequence of `int` indexes or `int`.
+
+        Returns:
+            Sliced rows.
+
+        """
+
+        return data.loc[k]#.compute()
 
     def _check_dtype(self):
         """Check if dtype in .set_data is ok and cast if not."""
@@ -86,12 +99,21 @@ class DaskCudfDataset(CudfDataset):
         # case to check - concat pandas dataset and from numpy to pandas dataset
         # TODO: Think about reset_index here
 
-        #self.data = self.data.reset_index(drop=True).persist()
-        self.data = self.data.map_partitions(self._reset_index,
-                                             meta=self.data).persist()
-
         # handle dates types
         self.data = self.data.map_partitions(self._convert_datetime,
                                              date_columns, meta=self.data).persist()
         for i in date_columns:
             self.dtypes[i] = np.datetime64
+            
+    @property
+    def shape(self) -> Tuple[Optional[int], Optional[int]]:
+        """Get size of 2d feature matrix.
+
+        Returns:
+            Tuple of 2 elements.
+
+        """
+        rows, cols = self.data.shape[0].compute(), len(self.features)
+        return rows, cols
+            
+            

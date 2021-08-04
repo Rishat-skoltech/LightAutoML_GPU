@@ -12,8 +12,6 @@ from dask_cudf.core import Series
 from .cudf_reader import CudfReader
 from ..dataset.daskcudf_dataset import DaskCudfDataset
 
-from .guess_roles import get_numeric_roles_stat, calc_encoding_rules, rule_based_roles_guess, \
-    get_category_roles_stat, calc_category_rules, rule_based_cat_handler_guess
 from ..dataset.base import valid_array_attributes, array_attr_roles
 from ..dataset.roles import ColumnRole, DropRole, DatetimeRole, CategoryRole, NumericRole
 from ..dataset.utils import roles_parser
@@ -34,8 +32,6 @@ UserDefinedRolesSequence = Sequence[UserDefinedRole]
 UserRolesDefinition = Optional[Union[UserDefinedRole, UserDefinedRolesDict,
                                      UserDefinedRolesSequence]]
 
-#this decorator works bad with a distributed client
-#@record_history(enabled=False)
 class DaskCudfReader(CudfReader):
     """
     Reader to convert :class:`~dask_cudf.core.DataFrame` to
@@ -114,7 +110,7 @@ class DaskCudfReader(CudfReader):
 
         """
         logger.info('Train data shape: {}'.format(train_data.shape))
-
+        
         if roles is None:
             roles = {}
         # transform roles from user format {RoleX: ['feat0', 'feat1', ...], RoleY: 'TARGET', ....}
@@ -140,9 +136,10 @@ class DaskCudfReader(CudfReader):
 
             # add new role
             parsed_roles[feat] = r
-
+        
         assert 'target' in kwargs, 'Target should be defined'
         self.target = kwargs['target'].name
+        
         kwargs['target'] = self._create_target(kwargs['target'])
 
         # TODO: Check target and task
@@ -203,7 +200,7 @@ class DaskCudfReader(CudfReader):
                 self._used_features.append(feat)
             else:
                 self._dropped_features.append(feat)
-
+                
         assert len(self.used_features) > 0, 'All features are excluded for some reasons'
 
         dataset = DaskCudfDataset(data=train_data[self.used_features].persist(),
@@ -262,34 +259,26 @@ class DaskCudfReader(CudfReader):
         """
         # TODO: Plans for advanced roles guessing
         # check if default numeric dtype defined
-        num_dtype = self._get_default_role_from_str('numeric').dtype
-        # check if feature is number
-        try:
-            if self.compute:
-                _ = feature.astype(num_dtype)
-            else:
-                _ = feature.astype(num_dtype).compute()
-            return NumericRole(num_dtype)
-        except ValueError:
-            pass
-        except TypeError:
-            pass
-
-        # check if default format is defined
-        date_format = self._get_default_role_from_str('datetime').format
-        # check if it's datetime
-        guessed_role = None
         if self.compute:
-            guessed_role = DatetimeRole(np.datetime64, date_format=date_format)\
-                           if self._is_datetimable(feature, date_format)\
-                           else CategoryRole(object)
+            return super()._guess_role(feature)
         else:
-            are_datetime = feature.map_partitions(self._is_datetimable,
-                                   date_format, meta=(None, 'U')).compute()
-            guessed_role = DatetimeRole(np.datetime64, date_format=date_format)\
-                           if are_datetime.all() else CategoryRole(object)
-        return guessed_role
-
+            num_dtype = self._get_default_role_from_str('numeric').dtype
+            date_format = self._get_default_role_from_str('datetime').format
+            try:
+                _ = feature.dt.compute()
+                return DatetimeRole(np.datetime64, date_format=date_format)
+            except AttributeError:
+                pass
+            # check if feature is number
+            try:
+                _ = feature.astype(num_dtype).compute()
+                return NumericRole(num_dtype)
+            except ValueError:
+                pass
+            except TypeError:
+                pass
+            return CategoryRole(object)
+        
     def read(self, data: DataFrame, features_names: Any = None,
              add_array_attrs: bool = False) -> DaskCudfDataset:
         """Read dataset with fitted metadata.
