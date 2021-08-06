@@ -7,7 +7,7 @@ import cupy as cp
 
 from cuml import PCA, TruncatedSVD
 
-from .base import LAMLTransformer
+from .base import LAMLTransformerGPU
 from ..dataset.base import LAMLDataset
 from ..dataset.np_pd_dataset_cupy import PandasDataset, CupyDataset, CSRSparseDataset, CupyDataset, CudfDataset
 from ..dataset.roles import NumericRole
@@ -35,7 +35,7 @@ def numeric_check(dataset: LAMLDataset):
 
 
 # TODO: merge into one transformer
-class PCATransformer(LAMLTransformer):
+class PCATransformer(LAMLTransformerGPU):
     """PCA."""
 
     _fit_checks = (numeric_check,)
@@ -113,7 +113,7 @@ class PCATransformer(LAMLTransformer):
         return output
 
 
-class SVDTransformer(LAMLTransformer):
+class SVDTransformer(LAMLTransformerGPU):
     """TruncatedSVD."""
 
     _fit_checks = (numeric_check,)

@@ -8,7 +8,7 @@ import cupy as cp
 import cudf
 
 
-from .base import LAMLTransformer
+from .base import LAMLTransformerGPU
 from ..dataset.base import LAMLDataset
 from ..dataset.np_pd_dataset_cupy import PandasDataset, CudfDataset, NumpyDataset, CupyDataset, DaskCudfDataset
 from ..dataset.roles import NumericRole, CategoryRole
@@ -33,7 +33,7 @@ def numeric_check(dataset: LAMLDataset):
         assert roles[f].name == 'Numeric', 'Only numbers accepted in this transformer'
 
 
-class NaNFlags(LAMLTransformer):
+class NaNFlags(LAMLTransformerGPU):
     """Create NaN flags."""
     _fit_checks = (numeric_check,)
     _transform_checks = ()
@@ -101,7 +101,7 @@ class NaNFlags(LAMLTransformer):
         return output
 
 
-class FillnaMedian(LAMLTransformer):
+class FillnaMedian(LAMLTransformerGPU):
     """Fillna with median."""
     _fit_checks = (numeric_check,)
     _transform_checks = ()
@@ -159,7 +159,7 @@ class FillnaMedian(LAMLTransformer):
         return output
 
 
-class FillInf(LAMLTransformer):
+class FillInf(LAMLTransformerGPU):
     """Fill inf with nan to handle as nan value."""
     _fit_checks = (numeric_check,)
     _transform_checks = ()
@@ -195,7 +195,7 @@ class FillInf(LAMLTransformer):
         return output
 
 
-class LogOdds(LAMLTransformer):
+class LogOdds(LAMLTransformerGPU):
     """Convert probs to logodds."""
     _fit_checks = (numeric_check,)
     _transform_checks = ()
@@ -230,7 +230,7 @@ class LogOdds(LAMLTransformer):
         return output
 
 
-class StandardScaler(LAMLTransformer):
+class StandardScaler(LAMLTransformerGPU):
     """Classic StandardScaler."""
 
     _fit_checks = (numeric_check,)
@@ -290,7 +290,7 @@ class StandardScaler(LAMLTransformer):
         return output
 
 
-class QuantileBinning(LAMLTransformer):
+class QuantileBinning(LAMLTransformerGPU):
     """Discretization of numeric features by quantiles."""
     _fit_checks = (numeric_check,)
     _transform_checks = ()

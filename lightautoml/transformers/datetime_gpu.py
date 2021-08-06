@@ -11,7 +11,7 @@ import cudf
 import pandas as pd
 
 
-from .base import LAMLTransformer
+from .base import LAMLTransformerGPU
 from ..dataset.base import LAMLDataset
 from ..dataset.np_pd_dataset_cupy import CudfDataset, CupyDataset
 from ..dataset.roles import NumericRole, CategoryRole, ColumnRole
@@ -41,7 +41,7 @@ def datetime_check(dataset: LAMLDataset):
         assert roles[f].name == 'Datetime', 'Only datetimes accepted in this transformer'
 
 
-class TimeToNum(LAMLTransformer):
+class TimeToNum(LAMLTransformerGPU):
     """
     Basic conversion strategy, used in selection one-to-one transformers.
     Datetime converted to difference
@@ -96,7 +96,7 @@ class TimeToNum(LAMLTransformer):
         return output
 
 
-class BaseDiff(LAMLTransformer):
+class BaseDiff(LAMLTransformerGPU):
     """
     Basic conversion strategy, used in selection one-to-one transformers.
     Datetime converted to difference with basic_date.
@@ -127,7 +127,7 @@ class BaseDiff(LAMLTransformer):
         self.diff_names = diff_names
         self.basic_interval = basic_interval
 
-    def fit(self, dataset: LAMLDataset) -> 'LAMLTransformer':
+    def fit(self, dataset: LAMLDataset) -> 'LAMLTransformerGPU':
         """Fit transformer and return it's instance.
 
         Args:
@@ -181,7 +181,7 @@ class BaseDiff(LAMLTransformer):
         return output
 
 
-class DateSeasons(LAMLTransformer):
+class DateSeasons(LAMLTransformerGPU):
     """
     Basic conversion strategy, used in selection one-to-one transformers.
     Datetime converted to difference with basic_date.
@@ -207,7 +207,7 @@ class DateSeasons(LAMLTransformer):
         if output_role is None:
             self.output_role = CategoryRole(cp.int32)
 
-    def fit(self, dataset: LAMLDataset) -> 'LAMLTransformer':
+    def fit(self, dataset: LAMLDataset) -> 'LAMLTransformerGPU':
         """Fit transformer and return it's instance.
 
         Args:

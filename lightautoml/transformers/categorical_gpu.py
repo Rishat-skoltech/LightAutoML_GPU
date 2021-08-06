@@ -8,9 +8,8 @@ from cupyx import scatter_add
 import cudf
 
 from cuml.preprocessing import OneHotEncoder as one_hot
-from cuml.preprocessing.LabelEncoder import LabelEncoder as label_enc_cuml
 
-from .base import LAMLTransformer
+from .base import LAMLTransformerGPU
 from ..dataset.base import LAMLDataset
 from ..dataset.np_pd_dataset_cupy import CudfDataset, CupyDataset, DaskCudfDataset, CSRSparseDataset
 from ..dataset.roles import CategoryRole, NumericRole
@@ -19,6 +18,8 @@ from ..dataset.roles import CategoryRole, NumericRole
 NumericalDataset = Union[CupyDataset, CudfDataset, DaskCudfDataset]
 NumericalOrSparse = Union[CupyDataset, CSRSparseDataset]
 
+def in_gpu(dataset):
+    return (type(dataset) in [CupyDataset, CudfDataset, DaskCudfDataset])
 
 def categorical_check(dataset: LAMLDataset):
     """Check if all passed vars are categories.
@@ -74,7 +75,7 @@ def encoding_check(dataset: LAMLDataset):
             f, roles[f])
 
 
-class LabelEncoder(LAMLTransformer):
+class LabelEncoder(LAMLTransformerGPU):
     """Simple LabelEncoder in order of frequency.
 
     Labels are integers from 1 to n. Unknown category encoded as 0.
@@ -184,7 +185,7 @@ class LabelEncoder(LAMLTransformer):
 
         return output
 
-class OHEEncoder(LAMLTransformer):
+class OHEEncoder(LAMLTransformerGPU):
     """
     Simple OneHotEncoder over label encoded categories.
     """
@@ -286,7 +287,7 @@ class OHEEncoder(LAMLTransformer):
 
         return output
 
-class FreqEncoder(LAMLTransformer):
+class FreqEncoder(LAMLTransformerGPU):
     """
     Labels are encoded with frequency in train data.
 
@@ -362,7 +363,7 @@ class FreqEncoder(LAMLTransformer):
 
         return output
 
-class TargetEncoder(LAMLTransformer):
+class TargetEncoder(LAMLTransformerGPU):
     """
     Out-of-fold target encoding.
 
@@ -529,7 +530,7 @@ class TargetEncoder(LAMLTransformer):
         return output
 
 
-class MultiClassTargetEncoder(LAMLTransformer):
+class MultiClassTargetEncoder(LAMLTransformerGPU):
     """
     Out-of-fold target encoding for multiclass task.
     
@@ -813,7 +814,7 @@ class OrdinalEncoder(LabelEncoder):
 
         """
         # set transformer names and add checks
-        LAMLTransformer.fit(self, dataset)
+        LAMLTransformerGPU.fit(self, dataset)
         # set transformer features
 
         # convert to accepted dtype and get attributes
@@ -837,37 +838,3 @@ class OrdinalEncoder(LabelEncoder):
                 self.dicts[i] = cnts
 
         return self
-"""
-
-    def transform(self, dataset: NumericalDataset) -> CupyDataset:
-        Transform categorical dataset to int labels.
-
-        Args:
-            dataset: Cudf or Cupy dataset of categorical features.
-
-        Returns:
-            Numpy dataset with encoded labels.
-
-        #
-        # checks here
-        super(OrdinalEncoder.__bases__[0], self).transform(dataset)
-        # convert to accepted dtype and get attributes
-        dataset = dataset.to_cudf()
-        df = dataset.data
-
-        # transform
-        new_arr = cp.empty(dataset.shape, dtype=self._output_role.dtype)
-
-        for n, i in enumerate(df.columns):
-            # to be compatible with OrdinalEncoder
-            if i in self.dicts:
-                new_arr[:, n] = df[i].map(self.dicts[i]).fillna(self._fillna_val).values
-            else:
-                new_arr[:, n] = df[i].values.astype(self._output_role.dtype)
-
-        # create resulted
-        output = dataset.empty().to_cupy()
-        output.set_data(new_arr, self.features, self._output_role)
-
-        return output
-"""

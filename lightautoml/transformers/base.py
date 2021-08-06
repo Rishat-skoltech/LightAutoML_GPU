@@ -9,10 +9,14 @@ from ..dataset.base import LAMLDataset, RolesDict
 from ..dataset.roles import ColumnRole
 from ..dataset.utils import concatenate
 
+from ..dataset.np_pd_dataset_cupy import CupyDataset, CudfDataset, DaskCudfDataset
+
 # TODO: From func transformer
 
 Roles = Union[Sequence[ColumnRole], ColumnRole, RolesDict, None]
 
+def in_gpu(dataset):
+    return (type(dataset) in [CupyDataset, CudfDataset, DaskCudfDataset])
 
 class LAMLTransformer:
     """Base class for transformer method (like sklearn, but works with datasets)."""
@@ -94,6 +98,11 @@ class LAMLTransformer:
 
         return self.transform(dataset)
 
+class LAMLTransformerGPU(LAMLTransformer):
+    def fit_transform(self, dataset: LAMLDataset) -> LAMLDataset:
+        if not in_gpu(dataset):
+            raise TypeError("Dataset must be either CupyDataset or CudfDataset or DaskCudfDataset!")
+        return super().fit_transform(dataset)
 
 class SequentialTransformer(LAMLTransformer):
     """
