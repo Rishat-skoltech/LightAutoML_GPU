@@ -9,7 +9,7 @@ from log_calls import record_history
 
 from lightautoml.validation.base import TrainValidIterator
 from ..dataset.base import LAMLDataset
-from ..dataset.np_pd_dataset_cupy import NumpyDataset, CSRSparseDataset, PandasDataset, CupyDataset, CudfDataset, DaskCudfDataset
+from ..dataset.np_pd_dataset_cupy import CupyDataset, CudfDataset, DaskCudfDataset
 from ..dataset.roles import NumericRole
 from ..utils.logging import get_logger
 from ..utils.timer import TaskTimer, PipelineTimer
