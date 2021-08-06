@@ -3,16 +3,14 @@
 from copy import copy, deepcopy
 from typing import Tuple, Union, Sequence
 
-import numpy as np
 import cupy as cp
-from log_calls import record_history
-#from sklearn.linear_model import LogisticRegression, ElasticNet, Lasso
+
 from cuml.linear_model import LogisticRegression, ElasticNet, Lasso
 
 from .base_gpu import TabularMLAlgo, TabularDataset
 from .torch_based.linear_model import TorchBasedLinearEstimator, TorchBasedLinearRegression, \
     TorchBasedLogisticRegression
-from ..dataset.np_pd_dataset_cupy import PandasDataset, CudfDataset
+from ..dataset.np_pd_dataset_cupy import CudfDataset
 from ..utils.logging import get_logger
 from ..validation.base import TrainValidIterator
 
@@ -21,7 +19,6 @@ logger = get_logger(__name__)
 LinearEstimator = Union[LogisticRegression, ElasticNet, Lasso]
 
 
-@record_history(enabled=False)
 class LinearLBFGS(TabularMLAlgo):
     """LBFGS L2 regression based on torch.
 
@@ -75,14 +72,14 @@ class LinearLBFGS(TabularMLAlgo):
 
         suggested_params['embed_sizes'] = ()
         if len(suggested_params['categorical_idx']) > 0:
-            suggested_params['embed_sizes'] = train.data[:, suggested_params['categorical_idx']].max(axis=0).astype(np.int32) + 1
+            suggested_params['embed_sizes'] = train.data[:, suggested_params['categorical_idx']].max(axis=0).astype(cp.int32) + 1
 
         suggested_params['data_size'] = train.shape[1]
 
         return suggested_params
 
     def fit_predict_single_fold(self, train: TabularDataset, valid: TabularDataset
-                                ) -> Tuple[TorchBasedLinearEstimator, np.ndarray]:
+                                ) -> Tuple[TorchBasedLinearEstimator, cp.ndarray]:
         """Train on train dataset and predict on holdout dataset.
 
         Args:
@@ -121,7 +118,6 @@ class LinearLBFGS(TabularMLAlgo):
         return pred
 
 
-@record_history(enabled=False)
 class LinearL1CD(TabularMLAlgo):
     """Coordinate descent based on sklearn implementation."""
     _name: str = 'LinearElasticNet'
@@ -228,7 +224,7 @@ class LinearL1CD(TabularMLAlgo):
         best_pred = None
         best_model = None
 
-        # TODO: check if name 'sklearn' is valid here
+        # TODO: check name 'sklearn'
         metric = self.task.losses['sklearn'].metric_func
 
         for l1_ratio in sorted(l1_ratios, reverse=True):
@@ -240,7 +236,7 @@ class LinearL1CD(TabularMLAlgo):
 
             model = deepcopy(_model)
 
-            c_best_score = -np.inf
+            c_best_score = -cp.inf
             c_best_pred = None
             c_best_model = None
             es = 0
@@ -254,7 +250,7 @@ class LinearL1CD(TabularMLAlgo):
 
                 model.fit(train.data, train_target, train_weight)
 
-                if np.allclose(model.coef_, 0):
+                if cp.allclose(model.coef_, 0):
                     if n == (len(cs) - 1):
                         logger.warning('All model coefs are 0. Model with l1_ratio {0} is dummy'.format(l1_ratio), UserWarning)
                     else:
@@ -301,7 +297,7 @@ class LinearL1CD(TabularMLAlgo):
 
         return best_model, val_pred
 
-    def predict_single_fold(self, model: LinearEstimator, dataset: TabularDataset) -> np.ndarray:
+    def predict_single_fold(self, model: LinearEstimator, dataset: TabularDataset) -> cp.ndarray:
         """Implements prediction on single fold.
 
         Args:
@@ -312,6 +308,8 @@ class LinearL1CD(TabularMLAlgo):
             Predictions for input dataset.
 
         """
+
+        # TODO: check 'sklearn' name here
         pred = self.task.losses['sklearn'].bw_func(self._predict_w_model_type(model, dataset.data))
 
         return pred

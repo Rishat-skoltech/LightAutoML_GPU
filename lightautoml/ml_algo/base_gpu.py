@@ -9,13 +9,13 @@ from log_calls import record_history
 
 from lightautoml.validation.base import TrainValidIterator
 from ..dataset.base import LAMLDataset
-from ..dataset.np_pd_dataset_cupy import NumpyDataset, CSRSparseDataset, PandasDataset, CupyDataset, CudfDataset
+from ..dataset.np_pd_dataset_cupy import NumpyDataset, CSRSparseDataset, PandasDataset, CupyDataset, CudfDataset, DaskCudfDataset
 from ..dataset.roles import NumericRole
 from ..utils.logging import get_logger
 from ..utils.timer import TaskTimer, PipelineTimer
 
 logger = get_logger(__name__)
-TabularDataset = Union[Cupy]
+TabularDataset = Union[CupyDataset, CudfDataset, DaskCudfDataset]
 
 
 class MLAlgo(ABC):
@@ -162,7 +162,7 @@ class MLAlgo(ABC):
 
 @record_history(enabled=False)
 class TabularMLAlgo(MLAlgo):
-    """Machine learning algorithms that accepts numpy arrays as input."""
+    """Machine learning algorithms that accepts cupy arrays as input."""
     _name: str = 'TabularAlgo'
 
     def _set_prediction(self, dataset: CupyDataset, preds_arr: cp.ndarray) -> CupyDataset:
