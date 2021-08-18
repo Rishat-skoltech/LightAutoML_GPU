@@ -24,23 +24,23 @@ Dataset = TypeVar('Dataset', bound=LAMLDataset)
 
 class DaskCudfDataset(CudfDataset):
     """Dataset that contains `dask_cudf.core.DataFrame` features and
-       `dask_cudf..Series` targets."""
+       `dask_cudf.Series` targets."""
     _init_checks = ()
     _data_checks = ()
     _concat_checks = ()
     _dataset_type = 'DaskCudfDataset'
 
     def __init__(self, data: Optional[DataFrame] = None,
-                 roles: Optional[RolesDict] = None, task: Optional[Task] = None,
-                 **kwargs: Series):
-        """Create dataset from `dask_cudf.core.DataFrame` and `dask_cudf.core.Series`
+                 roles: Optional[RolesDict] = None,
+                 task: Optional[Task] = None, **kwargs: Series):
+        """Dataset that contains `dask_cudf.core.DataFrame` and
+           `dask_cudf.core.Series` target
 
         Args:
             data: Table with features.
             features: features names.
             roles: Roles specifier.
             task: Task specifier.
-            npartitions: Number of partitions of the table.
             **kwargs: Series, array like attrs target, group etc...
 
         """
@@ -54,33 +54,46 @@ class DaskCudfDataset(CudfDataset):
                     kwargs[k] = data[f].reset_index(drop=True).persist()
                     roles[f] = DropRole()
         self._initialize(task, **kwargs)
-        #for k in kwargs:
-        #    self.__dict__[k] = dask_cudf.Series(kwargs[k])
-        
+
         size = len(data.index)
         data['index'] = data.index
         mapping = dict(zip( data.index.compute().values_host,np.arange(size) ))
-        data['index'] = data['index'].map(mapping).persist()  
+        data['index'] = data['index'].map(mapping).persist()
         data = data.set_index('index', drop=True, sorted=True)
-        
+        data = data.persist()
         if data is not None:
             self.set_data(data, None, roles)
 
-
-    @staticmethod
-    def _get_rows(data: DataFrame, k) -> FrameOrSeries:
-        """Define how to get rows slice.
+    #think about doing set_index here instead of the constructor
+    '''def set_data(self, data: DataFrame, features: None, roles: RolesDict):
+        """Inplace set data, features, roles for empty dataset.
 
         Args:
-            data: Table with data.
-            k: Sequence of `int` indexes or `int`.
-
-        Returns:
-            Sliced rows.
+            data: Table with features.
+            features: `None`, just for same interface.
+            roles: Dict with roles.
 
         """
+        if isinstance(data, pd.DataFrame):
+            data = cudf.DataFrame(data)
+        elif isinstance(data, cudf.DataFrame):
+            pass
+        else:
+            raise ValueError('Data type must be either pd.DataFrame or cudf.DataFrame.')
+        super().set_data(data, features, roles)'''
 
-        return data.loc[k]#.compute()
+    @staticmethod
+    def _hstack(datasets: Sequence[DataFrame]) -> DataFrame:
+        """Define how to concat features arrays.
+
+        Args:
+            datasets: Sequence of tables.
+
+        Returns:
+            concatenated table.
+
+        """
+        return dask_cudf.concat(datasets, axis=1).persist()
 
     def _check_dtype(self):
         """Check if dtype in .set_data is ok and cast if not."""
@@ -95,16 +108,83 @@ class DaskCudfDataset(CudfDataset):
 
         #UNCOMMENT THIS AFTER 21.08 RELEASE
         #self.data = self.data.astype(self.dtypes)
-        # do we need to reset_index ?? If yes - drop for Series attrs too
-        # case to check - concat pandas dataset and from numpy to pandas dataset
-        # TODO: Think about reset_index here
 
         # handle dates types
         self.data = self.data.map_partitions(self._convert_datetime,
-                                             date_columns, meta=self.data).persist()
+                                         date_columns, meta=self.data).persist()
         for i in date_columns:
             self.dtypes[i] = np.datetime64
-            
+
+    @staticmethod
+    def _get_rows(data: DataFrame, k) -> FrameOrSeries:
+        """Define how to get rows slice.
+
+        Args:
+            data: Table with data.
+            k: Sequence of `int` indexes or `int`.
+
+        Returns:
+            Sliced rows.
+
+        """
+
+        return data.loc[k].persist()#.compute()
+
+    def to_cudf(self) -> CudfDataset:
+        """Convert to class:`CudfDataset`.
+
+        Returns:
+            Same dataset in class:`CudfDataset` format.
+        """
+
+        data = self.data.compute()
+        roles = self.roles
+        task = self.task
+
+        params = dict(((x, self.__dict__[x].values)\
+                      for x in self._array_like_attrs))
+
+        return CudfDataset(data, roles, task, **params)
+
+    def to_numpy(self) -> 'NumpyDataset':
+        """Convert to class:`NumpyDataset`.
+
+        Returns:
+            Same dataset in class:`NumpyDataset` format.
+
+        """
+
+        return self.to_cudf().to_numpy()
+
+    def to_cupy(self) -> 'CupyDataset':
+        """Convert dataset to cupy.
+
+        Returns:
+            Same dataset in CupyDataset format
+
+        """
+
+        return self.to_cudf().to_cupy()
+
+    def to_pandas(self) -> 'PandasDataset':
+        """Convert dataset to pandas.
+
+        Returns:
+            Same dataset in PandasDataset format
+
+        """
+
+        return self.to_cudf().to_pandas()
+
+    def to_daskcudf(self) -> 'DaskCudfDataset':
+        """Empty method to return self
+
+        Returns:
+            self
+        """
+
+        return self
+
     @property
     def shape(self) -> Tuple[Optional[int], Optional[int]]:
         """Get size of 2d feature matrix.
@@ -115,5 +195,3 @@ class DaskCudfDataset(CudfDataset):
         """
         rows, cols = self.data.shape[0].compute(), len(self.features)
         return rows, cols
-            
-            

@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 # coding: utf-8
-import logging
-
 import os
 from time import perf_counter
 
@@ -109,7 +107,7 @@ def test_large_data_daskcudf():
     daskcudf_data = daskcudf_data.append(dask_cudf.read_parquet("./data/big_dummy.parquet"))
     daskcudf_data = daskcudf_data.repartition(npartitions=4).persist()
     print("done")
-    daskcudf_reader = DaskCudfReader(task, cv=5, random_state=42, frac = 0.5, compute=False)
+    daskcudf_reader = DaskCudfReader(task, cv=5, random_state=42, frac = 0.5, compute=False, advanced_roles=False)
     start = perf_counter()
     daskcudf_dataset = daskcudf_reader.fit_read(daskcudf_data,
                                       target=daskcudf_data[daskcudf_data.columns[-1]])

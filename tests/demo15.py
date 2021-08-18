@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 # coding: utf-8
-import logging
-
 from time import perf_counter
 
 import numpy as np
@@ -54,6 +52,7 @@ def generate_data(n, n_num, n_cat, n_date, n_str, nan_amount, num_categories):
     data.ravel()[np.random.choice(data.size, nan_amount, replace=False)] = np.nan
 
     category_data = np.random.randint(0, num_categories, (n, n_cat))
+
     string_data = gen_string_data(n, n_str)
 
     string_data = np.reshape(string_data, (n, n_str))
@@ -62,7 +61,9 @@ def generate_data(n, n_num, n_cat, n_date, n_str, nan_amount, num_categories):
                                (n, n_date)).astype(np.dtype("timedelta64[D]")) \
                                + np.datetime64("2018-01-01")
 
+    #this is bad, should be put an assert against it?
     data = np.append(data, string_data, axis=1)
+
     data = np.append(data, date_data.astype("U"), axis=1)
     data = np.append(data, category_data, axis=1)
     data = pd.DataFrame(data, columns=cols)
@@ -77,14 +78,16 @@ def test_cudf_daskcudf_readers_basic():
     task = Task("binary")
 
     print("#### TEST-01 ####")
-    target, _, data = generate_data(n=40000, n_num=200, n_cat=20, n_date=0,
+    target, _, data = generate_data(n=400, n_num=200, n_cat=20, n_date=0,
                                     n_str=0, nan_amount=0, num_categories=2)
     cudf_data = cudf.DataFrame.from_pandas(data)
     daskcudf_data = dask_cudf.from_cudf(cudf_data, npartitions=4)
     pd_reader = PandasToPandasReader(task, cv=5, random_state=42,
                                      advanced_roles=False)
-    cudf_reader = CudfReader(task, cv=5, random_state=42)
-    daskcudf_reader = DaskCudfReader(task, cv=5, random_state=42)
+    cudf_reader = CudfReader(task, cv=5, random_state=42,
+                                     advanced_roles=False)
+    daskcudf_reader = DaskCudfReader(task, cv=5, random_state=42,
+                                     advanced_roles=False)
 
     start = perf_counter()
     pd_dataset = pd_reader.fit_read(data, target=data[target])
@@ -115,8 +118,8 @@ def test_cudf_daskcudf_readers_basic():
     cudf_data = cudf.DataFrame.from_pandas(data)
     daskcudf_data = dask_cudf.from_cudf(cudf_data, npartitions=4)
     pd_reader = PandasToPandasReader(task, cv=5, random_state=42, advanced_roles=False)
-    cudf_reader = CudfReader(task, cv=5, random_state=42)
-    daskcudf_reader = DaskCudfReader(task, cv=5, random_state=42)
+    cudf_reader = CudfReader(task, cv=5, random_state=42, advanced_roles=False)
+    daskcudf_reader = DaskCudfReader(task, cv=5, random_state=42, advanced_roles=False)
 
     start = perf_counter()
     pd_dataset = pd_reader.fit_read(data, target=data[target])

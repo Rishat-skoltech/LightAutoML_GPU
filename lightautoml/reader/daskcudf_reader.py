@@ -1,17 +1,17 @@
 """Dask_cudf reader."""
 
-from typing import Any, Union, Dict, List, Sequence, TypeVar, Optional
+from typing import Any, Union, Dict, Sequence, TypeVar, Optional
 
 import numpy as np
 
 import cupy as cp
 
-from dask_cudf.core import DataFrame
-from dask_cudf.core import Series
+from dask_cudf.core import DataFrame, Series
 
 from .cudf_reader import CudfReader
 from ..dataset.daskcudf_dataset import DaskCudfDataset
 
+from .utils_gpu import set_sklearn_folds_gpu
 from ..dataset.base import valid_array_attributes, array_attr_roles
 from ..dataset.roles import ColumnRole, DropRole, DatetimeRole, CategoryRole, NumericRole
 from ..dataset.utils import roles_parser
@@ -110,11 +110,13 @@ class DaskCudfReader(CudfReader):
 
         """
         logger.info('Train data shape: {}'.format(train_data.shape))
-        
+
         if roles is None:
             roles = {}
-        # transform roles from user format {RoleX: ['feat0', 'feat1', ...], RoleY: 'TARGET', ....}
-        # to automl format {'feat0': RoleX, 'feat1': RoleX, 'TARGET': RoleY, ...}
+        # transform roles from user format
+        #               {RoleX: ['feat0', 'feat1', ...], RoleY: 'TARGET', ....}
+        # to automl format
+        #               {'feat0': RoleX, 'feat1': RoleX, 'TARGET': RoleY, ...}
         parsed_roles = roles_parser(roles)
         # transform str role definition to automl ColumnRole
         attrs_dict = dict(zip(array_attr_roles, valid_array_attributes))
@@ -127,22 +129,18 @@ class DaskCudfReader(CudfReader):
 
             # check if column is defined like target/group/weight etc ...
             if r.name in attrs_dict:
-                # defined in kwargs is rewrited.. TODO: Maybe raise warning if rewrited?
-                # TODO: Think, what if multilabel or multitask? Multiple column target ..
-                # TODO: Maybe for multilabel/multitask make target only avaliable in kwargs??
                 self._used_array_attrs[attrs_dict[r.name]] = feat
                 kwargs[attrs_dict[r.name]] = train_data[feat]
                 r = DropRole()
 
             # add new role
             parsed_roles[feat] = r
-        
+
         assert 'target' in kwargs, 'Target should be defined'
         self.target = kwargs['target'].name
-        
+
         kwargs['target'] = self._create_target(kwargs['target'])
 
-        # TODO: Check target and task
         # get subsample if it needed
         subsample = train_data
         if self.frac is not None and self.frac < 1.0:
@@ -155,7 +153,7 @@ class DaskCudfReader(CudfReader):
         # infer roles
         for feat in subsample.columns:
             assert isinstance(feat, str), 'Feature names must be string,' \
-                   ' find feature name: {}, with type: {}'.format(feat, type(feat))
+                ' find feature name: {}, with type: {}'.format(feat, type(feat))
             if feat in parsed_roles:
                 r = parsed_roles[feat]
                 # handle datetimes
@@ -166,7 +164,7 @@ class DaskCudfReader(CudfReader):
                     else:
                         subsample[feat].map_partitions(self._try_datetime, r,
                                                        meta=(None, None)).compute()
-                # replace default category dtype for numeric roles dtype
+                #replace default category dtype for numeric roles dtype
                 #if cat col dtype is numeric
                 if r.name == 'Category':
                     # default category role
@@ -177,18 +175,19 @@ class DaskCudfReader(CudfReader):
                     except KeyError:
                         flg_default_params = False
 
-                    if flg_default_params and \
-                       not np.issubdtype(cat_role.dtype, np.number) and \
-                       np.issubdtype(subsample.dtypes[feat], np.number):
-                        r.dtype = self._get_default_role_from_str('numeric').dtype
+                    if flg_default_params and\
+                    not np.issubdtype(cat_role.dtype, np.number) and\
+                    np.issubdtype(subsample.dtypes[feat], np.number):
+                        r.dtype=self._get_default_role_from_str('numeric').dtype
             else:
                 # if no - infer
                 is_ok_feature = False
                 if self.compute:
                     is_ok_feature = self._is_ok_feature(subsample[feat])
                 else:
-                    is_ok_feature = subsample[feat].map_partitions(self._is_ok_feature,
-                                                    meta=(None, '?')).compute().all()
+                    is_ok_feature = subsample[feat]\
+                                   .map_partitions(self._is_ok_feature,
+                                              meta=(None, '?')).compute().all()
                 if is_ok_feature:
                     r = self._guess_role(subsample[feat])
                 else:
@@ -200,12 +199,31 @@ class DaskCudfReader(CudfReader):
                 self._used_features.append(feat)
             else:
                 self._dropped_features.append(feat)
-                
-        assert len(self.used_features) > 0, 'All features are excluded for some reasons'
+
+        assert len(self.used_features) > 0,\
+               'All features are excluded for some reasons'
+
+        folds = set_sklearn_folds_gpu(self.task, kwargs['target'],
+                       cv=self.cv, random_state=self.random_state,
+                       group=None if 'group' not in kwargs else kwargs['group'])
+        if folds is not None:
+            kwargs['folds'] = folds
 
         dataset = DaskCudfDataset(data=train_data[self.used_features].persist(),
                                   roles=self.roles, task=self.task, **kwargs)
 
+        if self.advanced_roles:
+
+            new_roles = self.advanced_roles_guess(dataset, manual_roles=parsed_roles)
+
+            droplist = [x for x in new_roles if new_roles[x].name == 'Drop' and\
+                                                not self._roles[x].force_input]
+
+            self.upd_used_features(remove=droplist)
+            self._roles = {x: new_roles[x] for x in new_roles if x not in droplist}
+
+            dataset = DaskCudfDataset(train_data[self.used_features],
+                                  self.roles, task=self.task, **kwargs)
         return dataset
 
     def _create_target(self, target: Series):
@@ -233,15 +251,16 @@ class DaskCudfReader(CudfReader):
 
                 assert srtd.shape[0] > 1, 'Less than 2 unique values in target'
                 if self.task.name == 'binary':
-                    assert srtd.shape[0] == 2, 'Binary task and more than 2 values in target'
-                return target
+                    assert srtd.shape[0] == 2,\
+                           'Binary task and more than 2 values in target'
+                return target.persist()
 
             # case - create mapping
             self.class_mapping = {n: x for (x, n) in enumerate(cp.asnumpy(unqiues))}
             return target.astype(np.int32).persist()
 
         assert not target.compute().isna().any(), 'Nan in target detected'
-        return target
+        return target.persist()
 
     def _guess_role(self, feature: Series) -> RoleType:
         """Try to infer role, simple way.
@@ -257,15 +276,13 @@ class DaskCudfReader(CudfReader):
             Feature role.
 
         """
-        # TODO: Plans for advanced roles guessing
-        # check if default numeric dtype defined
         if self.compute:
             return super()._guess_role(feature)
         else:
             num_dtype = self._get_default_role_from_str('numeric').dtype
             date_format = self._get_default_role_from_str('datetime').format
             try:
-                _ = feature.dt.compute()
+                _ = feature.dt
                 return DatetimeRole(np.datetime64, date_format=date_format)
             except AttributeError:
                 pass
@@ -278,7 +295,7 @@ class DaskCudfReader(CudfReader):
             except TypeError:
                 pass
             return CategoryRole(object)
-        
+
     def read(self, data: DataFrame, features_names: Any = None,
              add_array_attrs: bool = False) -> DaskCudfDataset:
         """Read dataset with fitted metadata.
@@ -304,9 +321,8 @@ class DaskCudfReader(CudfReader):
                     continue
 
                 if array_attr == 'target' and self.class_mapping is not None:
-                    val = val.map_partitions(self._apply_class_mapping,
-                                             data.index, col_name).persist()
-                kwargs[array_attr] = val
+                    kwargs[array_attr] = val.map_partitions(self._apply_class_mapping,
+                                             col_name, meta=val).persist()
 
         dataset = DaskCudfDataset(data[self.used_features], roles=self.roles,
                                   task=self.task, **kwargs)

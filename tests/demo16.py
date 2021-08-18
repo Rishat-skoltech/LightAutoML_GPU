@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 # coding: utf-8
-import logging
-
 import os
 from time import perf_counter
 
@@ -100,7 +98,7 @@ def test_large_data_cudf():
     print("done")
 
     cudf_data = daskcudf_data.compute()
-    cudf_reader = CudfReader(task, cv=5, random_state=42)
+    cudf_reader = CudfReader(task, cv=5, random_state=42, advanced_roles=False)
     start = perf_counter()
     cudf_dataset = cudf_reader.fit_read(cudf_data,
                                         target=cudf_data[cudf_data.columns[-1]])
