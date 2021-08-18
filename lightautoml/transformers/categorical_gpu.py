@@ -342,7 +342,7 @@ class OHEEncoder_gpu(LAMLTransformer):
                            handle_unknown='ignore')
 
         max_val = int(max_idx.max())
-        temp_data = cp.ones((len(data.columns), max_val)) *(max_val+1)
+        temp_data = cp.ones((len(data.columns), max_val+1)) *(max_val+1)
         for i,col in enumerate(data.columns):
             uniques = data[col].unique().compute().values
             temp_data[i][:uniques.shape[0]] = uniques
@@ -406,7 +406,7 @@ class OHEEncoder_gpu(LAMLTransformer):
             DaskCupy dataset with encoded labels.
 
         """
-        new_data = dataset.data.map_partitions(self.call_ohe, meta=dataset.data)
+        new_data = dataset.data.map_partitions(self.call_ohe)#, meta=dataset.data)
 
         output = dataset.empty()
 

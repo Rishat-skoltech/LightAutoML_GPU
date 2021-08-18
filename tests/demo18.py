@@ -67,14 +67,14 @@ def generate_data(n, n_num, n_cat, n_date, n_str, max_n_cat):
                                + np.datetime64("2018-01-01")
 
     data = pd.DataFrame(data, columns = cols[:n_num]).astype('f')
-    
+
     ix = [(row, col) for row in range(data.shape[0]) for col in range(data.shape[1])]
     for row, col in random.sample(ix, int(round(.2*len(ix)))):
         data.iat[row, col] = np.nan
     
     nn = len(data.columns)
     for i in range(n_cat):
-        data[cols[nn+i]] = pd.Series(category_data[:,i]).astype('f')
+        data[cols[nn+i]] = pd.Series(category_data[:,i]).astype('i')
         
     
     
@@ -93,16 +93,13 @@ def generate_data(n, n_num, n_cat, n_date, n_str, max_n_cat):
     return 'target', cols, data
 
 def test_transformers():
-    
-
     task = Task("binary")
     target, _, data = generate_data(n=10, n_num=3, n_cat=3, n_date=3,
                                     n_str=3, max_n_cat=10)
-    
+
     data['__fold__'] = np.random.randint(0, 5, len(data))
-    
+    print("THE DATA:")
     print(data)
-    
 
     num_roles = ['col_0', 'col_1', 'col_2']    
     cat_roles = ['col_3', 'col_4', 'col_5']
@@ -117,7 +114,6 @@ def test_transformers():
         FoldsRole(): '__fold__'
     }
 
-
     cudf_data = cudf.DataFrame.from_pandas(data, nan_as_null=False)
     daskcudf_data = dask_cudf.from_cudf(cudf_data, npartitions=2)
     
@@ -125,20 +121,181 @@ def test_transformers():
     cudf_dataset = CudfDataset(cudf_data, roles_parser(check_roles), task=task)
     daskcudf_dataset = DaskCudfDataset(daskcudf_data, roles_parser(check_roles), task=task)
     
-    filler_mgp = datetime_gpu.DateSeasons_gpu()   #base_names=['col_4', 'col_5'], diff_names=['col_6'])
-    filler_gpu = datetime_gpu.DateSeasons_gpu()   #base_names=['col_4', 'col_5'], diff_names=['col_6'])
-    filler_cpu = datetime.DateSeasons()           #base_names=['col_4', 'col_5'], diff_names=['col_6'])
+    ################################################################################
+    filler_mgp = datetime_gpu.DateSeasons_gpu()
+    filler_gpu = datetime_gpu.DateSeasons_gpu()
+    filler_cpu = datetime.DateSeasons()
     
     filled_cpu = filler_cpu.fit_transform(pd_dataset[:,dat_roles])
     filled_gpu = filler_gpu.fit_transform(cudf_dataset[:,dat_roles])
     filled_mgp = filler_mgp.fit_transform(daskcudf_dataset[:,dat_roles])
     
-    print(filled_mgp.data.compute())
-    print(filled_gpu.data)
-    print(filled_cpu)
-    #for i in range(len(filled_cpu.data)):
-    #    print(filled_cpu.data[i], filled_gpu.data[i])
+    print("DateSeasons:")
+    print("Are outputs close: pandas vs cudf", np.allclose(filled_gpu.data.get(), filled_cpu.data))
+    print("Are outputs close: pandas vs dask_cudf", np.allclose(filled_mgp.data.compute().values.get(), filled_cpu.data))
+    #################################################################################
+
+    filler_mgp = datetime_gpu.TimeToNum_gpu()
+    filler_gpu = datetime_gpu.TimeToNum_gpu()
+    filler_cpu = datetime.TimeToNum()
     
+    filled_cpu = filler_cpu.fit_transform(pd_dataset[:,dat_roles])
+    filled_gpu = filler_gpu.fit_transform(cudf_dataset[:,dat_roles])
+    filled_mgp = filler_mgp.fit_transform(daskcudf_dataset[:,dat_roles])
+    
+    print("TimeToNum:")
+    print("Are outputs close: pandas vs cudf", np.allclose(filled_gpu.data.get(), filled_cpu.data))
+    print("Are outputs close: pandas vs dask_cudf", np.allclose(filled_mgp.data.compute().values.get(), filled_cpu.data))
+    ##################################################################################
+
+    filler_mgp = datetime_gpu.BaseDiff_gpu(base_names=['col_9', 'col_10'], diff_names=['col_11'])
+    filler_gpu = datetime_gpu.BaseDiff_gpu(base_names=['col_9', 'col_10'], diff_names=['col_11'])
+    filler_cpu = datetime.BaseDiff(base_names=['col_9', 'col_10'], diff_names=['col_11'])
+    
+    filled_cpu = filler_cpu.fit_transform(pd_dataset[:,dat_roles])
+    filled_gpu = filler_gpu.fit_transform(cudf_dataset[:,dat_roles])
+    filled_mgp = filler_mgp.fit_transform(daskcudf_dataset[:,dat_roles])
+    
+    print("BaseDiff:")
+    print("Are outputs close: pandas vs cudf", np.allclose(filled_gpu.data.get(), filled_cpu.data))
+    print("Are outputs close: pandas vs dask_cudf", np.allclose(filled_mgp.data.compute().values.get(), filled_cpu.data))
+    ##################################################################################
+
+    filler_mgp = numeric_gpu.NaNFlags_gpu()
+    filler_gpu = numeric_gpu.NaNFlags_gpu()
+    filler_cpu = numeric.NaNFlags()
+    
+    filled_cpu = filler_cpu.fit_transform(pd_dataset[:,num_roles])
+    filled_gpu = filler_gpu.fit_transform(cudf_dataset[:,num_roles])
+    filled_mgp = filler_mgp.fit_transform(daskcudf_dataset[:,num_roles])
+    
+    print("NaNFlags:")
+    print("Are outputs close: pandas vs cudf", np.allclose(filled_gpu.data.get(), filled_cpu.data))
+    print("Are outputs close: pandas vs dask_cudf", np.allclose(filled_mgp.data.compute().values.get(), filled_cpu.data))
+    ##################################################################################
+
+    filler_mgp = numeric_gpu.FillnaMedian_gpu()
+    filler_gpu = numeric_gpu.FillnaMedian_gpu()
+    filler_cpu = numeric.FillnaMedian()
+    
+    filled_cpu = filler_cpu.fit_transform(pd_dataset[:,num_roles])
+    filled_gpu = filler_gpu.fit_transform(cudf_dataset[:,num_roles])
+    filled_mgp = filler_mgp.fit_transform(daskcudf_dataset[:,num_roles])
+    
+    print("FillnaMedian:")
+    print("Are outputs close: pandas vs cudf", np.allclose(filled_gpu.data.get(), filled_cpu.data))
+    print("Are outputs close: pandas vs dask_cudf", np.allclose(filled_mgp.data.compute().values.get(), filled_cpu.data))
+    ##################################################################################
+
+    filler_mgp = numeric_gpu.LogOdds_gpu()
+    filler_gpu = numeric_gpu.LogOdds_gpu()
+    filler_cpu = numeric.LogOdds()
+    
+    filled_cpu = filler_cpu.fit_transform(pd_dataset[:,num_roles])
+    filled_gpu = filler_gpu.fit_transform(cudf_dataset[:,num_roles])
+    filled_mgp = filler_mgp.fit_transform(daskcudf_dataset[:,num_roles])
+    
+    print("LogOdds:")
+    print("Are outputs close: pandas vs cudf", np.allclose(filled_gpu.data.values.get(), filled_cpu.data))
+    print("Are outputs close: pandas vs dask_cudf", np.allclose(filled_mgp.data.compute().values.get(), filled_cpu.data))
+    ##################################################################################
+
+    filler_mgp = numeric_gpu.StandardScaler_gpu()
+    filler_gpu = numeric_gpu.StandardScaler_gpu()
+    filler_cpu = numeric.StandardScaler()
+    
+    filled_cpu = filler_cpu.fit_transform(pd_dataset[:,num_roles])
+    filled_gpu = filler_gpu.fit_transform(cudf_dataset[:,num_roles])
+    filled_mgp = filler_mgp.fit_transform(daskcudf_dataset[:,num_roles])
+    
+    print("StandardScaler:")
+    print("Are outputs close: pandas vs cudf", np.allclose(filled_gpu.data.get(), filled_cpu.data))
+    print("Are outputs close: pandas vs dask_cudf", np.allclose(filled_mgp.data.compute().values.get(), filled_cpu.data))
+   ##################################################################################
+
+    filler_mgp = numeric_gpu.QuantileBinning_gpu()
+    filler_gpu = numeric_gpu.QuantileBinning_gpu()
+    filler_cpu = numeric.QuantileBinning()
+    
+    filled_cpu = filler_cpu.fit_transform(pd_dataset[:,num_roles])
+    filled_gpu = filler_gpu.fit_transform(cudf_dataset[:,num_roles])
+    filled_mgp = filler_mgp.fit_transform(daskcudf_dataset[:,num_roles])
+    
+    print("QuantileBinning:")
+    print("Are outputs close: pandas vs cudf", np.allclose(filled_gpu.data.get(), filled_cpu.data))
+    print("Are outputs close: pandas vs dask_cudf", np.allclose(filled_mgp.data.compute().values.get(), filled_cpu.data))
+    ##################################################################################
+
+    filler_mgp = categorical_gpu.LabelEncoder_gpu()
+    filler_gpu = categorical_gpu.LabelEncoder_gpu()
+    filler_cpu = categorical.LabelEncoder()
+    
+    filled_cpu = filler_cpu.fit_transform(pd_dataset[:,str_roles])
+    filled_gpu = filler_gpu.fit_transform(cudf_dataset[:,str_roles])
+    filled_mgp = filler_mgp.fit_transform(daskcudf_dataset[:,str_roles])
+    
+    print("LabelEncoder:")
+    print("Are outputs close: pandas vs cudf", np.allclose(filled_gpu.data.get(), filled_cpu.data))
+    print("Are outputs close: pandas vs dask_cudf", np.allclose(filled_mgp.data.compute().values.get(), filled_cpu.data))
+
+    ##################################################################################
+
+    filler_mgp = categorical_gpu.OHEEncoder_gpu(make_sparse=False)
+    filler_gpu = categorical_gpu.OHEEncoder_gpu(make_sparse=False)
+    filler_cpu = categorical.OHEEncoder(make_sparse=False)
+    
+    filled_cpu = filler_cpu.fit_transform(pd_dataset[:,cat_roles])
+    filled_gpu = filler_gpu.fit_transform(cudf_dataset[:,cat_roles])
+    filled_mgp = filler_mgp.fit_transform(daskcudf_dataset[:,cat_roles])
+    
+    print("OHEEncoder:")
+    print("Are outputs close: pandas vs cudf", np.allclose(filled_gpu.data.get(), filled_cpu.data))
+    print("Are outputs close: pandas vs dask_cudf", np.allclose(filled_mgp.data.compute().values.get(), filled_cpu.data))
+
+    ##################################################################################
+
+    filler_mgp = categorical_gpu.FreqEncoder_gpu()
+    filler_gpu = categorical_gpu.FreqEncoder_gpu()
+    filler_cpu = categorical.FreqEncoder()
+    
+    filled_cpu = filler_cpu.fit_transform(pd_dataset[:,str_roles])
+    filled_gpu = filler_gpu.fit_transform(cudf_dataset[:,str_roles])
+    filled_mgp = filler_mgp.fit_transform(daskcudf_dataset[:,str_roles])
+    
+    print("FreqEncoder:")
+    print("Are outputs close: pandas vs cudf", np.allclose(filled_gpu.data.get(), filled_cpu.data))
+    print("Are outputs close: pandas vs dask_cudf", np.allclose(filled_mgp.data.compute().values.get(), filled_cpu.data))
+
+    ##################################################################################
+
+    filler_mgp = categorical_gpu.OrdinalEncoder_gpu()
+    filler_gpu = categorical_gpu.OrdinalEncoder_gpu()
+    filler_cpu = categorical.OrdinalEncoder()
+    
+    filled_cpu = filler_cpu.fit_transform(pd_dataset[:,cat_roles])
+    filled_gpu = filler_gpu.fit_transform(cudf_dataset[:,cat_roles])
+    filled_mgp = filler_mgp.fit_transform(daskcudf_dataset[:,cat_roles])
+    
+    print("OrdinalEncoder:")
+    print("Are outputs close: pandas vs cudf", np.allclose(filled_gpu.data.get(), filled_cpu.data))
+    print("Are outputs close: pandas vs dask_cudf", np.allclose(filled_mgp.data.compute().values.get(), filled_cpu.data))
+
+    ##################################################################################
+    
+    filler_mgp = categorical_gpu.TargetEncoder_gpu()
+    filler_gpu = categorical_gpu.TargetEncoder_gpu()
+    filler_cpu = categorical.TargetEncoder()
+    
+    filled_cpu = filler_cpu.fit_transform(pd_dataset[:,cat_roles])
+    filled_gpu = filler_gpu.fit_transform(cudf_dataset[:,cat_roles])
+    
+    daskcudf_dataset.data = daskcudf_dataset.data.reset_index(drop=True)
+    filled_mgp = filler_mgp.fit_transform(daskcudf_dataset[:,cat_roles])
+    
+    print("TargetEncoder:")
+    print("Are outputs close: pandas vs cudf", np.allclose(filled_gpu.data.get(), filled_cpu.data))
+    print("Are outputs close: pandas vs dask_cudf", np.allclose(filled_mgp.data.compute().values.get(), filled_cpu.data))
+
 if __name__ == "__main__":
     test_transformers()
     
