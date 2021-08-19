@@ -98,11 +98,8 @@ class LinearLBFGS(TabularMLAlgo):
 
         model = self._infer_params()
 
-        print("train target type:", type(train.target), train.target)
         model.fit(train.data, train.target, train.weights, valid.data, valid.target, valid.weights)
-        print(type(model))
         val_pred = model.predict(valid.data)
-
         return model, val_pred
 
     def predict_single_fold(self, model: TorchBasedLinearEstimator, dataset: TabularDataset) -> cp.ndarray:
@@ -132,7 +129,7 @@ class LinearL1CD(TabularMLAlgo):
         'cs': [1e-4, 1e-3, 1e-2, 1e-1, 1, 10, 100, 1000, 10000, 100000, 1000000],
         'early_stopping': 2,
         'l1_ratios': (1,),
-        'solver': 'saga'
+        'solver': 'qn'
 
     }
 
@@ -146,16 +143,16 @@ class LinearL1CD(TabularMLAlgo):
         if self.task.name in ['binary', 'multiclass']:
 
             if l1_ratios == (1,):
-                model = LogisticRegression(warm_start=True, penalty='l1', **params)
+                model = LogisticRegression(penalty='l1', **params)
             else:
-                model = LogisticRegression(warm_start=True, penalty='elasticnet', **params)
+                model = LogisticRegression(penalty='elasticnet', **params)
 
         elif self.task.name == 'reg':
             params.pop('solver')
             if l1_ratios == (1,):
-                model = Lasso(warm_start=True, **params)
+                model = Lasso(**params)
             else:
-                model = ElasticNet(warm_start=True, **params)
+                model = ElasticNet(**params)
 
         else:
             raise AttributeError('Task not supported')
@@ -288,6 +285,8 @@ class LinearL1CD(TabularMLAlgo):
                 best_score = c_best_score
                 best_pred = deepcopy(c_best_pred)
                 best_model = deepcopy(c_best_model)
+                # TODO: remove this print
+                print("BEST MODEL:", best_model)
 
             if self.timer.time_limit_exceeded():
                 logger.info('Time limit exceeded')

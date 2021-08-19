@@ -227,7 +227,6 @@ class TabularMLAlgo(MLAlgo):
         # get empty validation data to write prediction
         # TODO: Think about this cast
         preds_ds = cast(CupyDataset, train_valid_iterator.get_validation_data().empty().to_cupy())
-        print("preds_ds:", type(preds_ds))
         outp_dim = 1
         if self.task.name == 'multiclass':
             outp_dim = int(cp.max(preds_ds.target) + 1)

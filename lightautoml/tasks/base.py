@@ -446,10 +446,8 @@ class Task:
 
         # set callback metric for loss
         # if no metric - infer from task
-        print('metric before assign:', metric)
         if metric is None:
             metric = _default_metrics[self.name]
-        print('metric after assign:', metric)
         self.metric_params = {}
         if metric_params is not None:
             self.metric_params = metric_params
