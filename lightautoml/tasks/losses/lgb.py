@@ -126,7 +126,8 @@ class LGBLoss(Loss):
     """Loss used for LightGBM."""
 
     def __init__(self, loss: Union[str, Callable], loss_params: Optional[Dict] = None,
-                 fw_func: Optional[Callable] = None, bw_func: Optional[Callable] = None):
+                 fw_func: Optional[Callable] = None, bw_func: Optional[Callable] = None,
+                 device: Optional[str] = 'cpu'):
         """
 
         Args:

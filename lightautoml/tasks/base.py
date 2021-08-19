@@ -5,18 +5,22 @@ from functools import partial
 from typing import Callable, Union, Optional, Dict, Any, TYPE_CHECKING
 
 import numpy as np
+import cupy as cp
+
 from log_calls import record_history
 
-from lightautoml.tasks.losses import LGBLoss, SKLoss, TORCHLoss, CBLoss
+from lightautoml.tasks.losses import LGBLoss, SKLoss, TORCHLoss, CBLoss, CUMLLoss
 from .common_metric import _valid_str_metric_names, _valid_metric_args
+from .common_metric_gpu import _valid_str_metric_names as _valid_str_metric_names_gpu
 from .utils import infer_gib, infer_gib_multiclass
 from ..utils.logging import get_logger
 
 if TYPE_CHECKING:
-    from ..dataset.np_pd_dataset import NumpyDataset, PandasDataset
+    from ..dataset.np_pd_dataset_cupy import NumpyDataset, PandasDataset, CupyDataset, CudfDataset, DaskCudfDataset
     from ..dataset.base import LAMLDataset
 
     SklearnCompatible = Union[NumpyDataset, PandasDataset]
+    CumlCompatible = Union[CupyDataset, CudfDataset, DaskCudfDataset]
 
 logger = get_logger(__name__)
 
@@ -39,7 +43,7 @@ _default_metrics = {
 
 }
 
-_valid_loss_types = ['lgb', 'sklearn', 'torch', 'cb']
+_valid_loss_types = ['lgb', 'sklearn', 'torch', 'cb', 'cuml']
 
 _valid_str_loss_names = {
 
@@ -48,7 +52,6 @@ _valid_str_loss_names = {
     'multiclass': ['crossentropy', 'f1']
 
 }
-
 
 _valid_loss_args = {
 
@@ -206,6 +209,91 @@ class SkMetric(LAMLMetric):
         return value * sign
 
 
+class CumlMetric(LAMLMetric):
+    """Abstract class for cuml compatible metric.
+
+    Implements metric calculation in cuml format on cupy/cudf datasets.
+
+    """
+
+    @property
+    def metric(self) -> Callable:
+        """Metric function."""
+        assert self._metric is not None, 'Metric calculation is not defined'
+        return self._metric
+
+    @property
+    def name(self) -> str:
+        """Name of used metric."""
+        if self._name is None:
+            return 'AutoML Metric'
+        else:
+            return self._name
+
+    def __init__(self, metric: Optional[Callable] = None,
+                 name: Optional[str] = None,
+                 greater_is_better: bool = True,
+                 one_dim: bool = True,
+                 **kwargs: Any):
+        """
+
+        Args:
+            metric: Specifies metric. Format:
+                ``func(y_true, y_false, Optional[sample_weight], **kwargs)`` -> `float`.
+            name: Name of metric.
+            greater_is_better: Whether or not higher metric value is better.
+            one_dim: `True` for single class, False for multiclass.
+            weighted: Weights of classes.
+            **kwargs: Other parameters for metric.
+
+        """
+        self._metric = metric
+        self._name = name
+
+        self.greater_is_better = greater_is_better
+        self.one_dim = one_dim
+        # self.weighted = weighted
+
+        self.kwargs = kwargs
+
+    def __call__(self, dataset: 'CumlCompatible', dropna: bool = False) -> float:
+        """Implement call cuml metric on dataset.
+
+        Args:
+            dataset: Dataset in Cupy or Cudf format.
+            dropna: To ignore NaN in metric calculation.
+
+        Returns:
+            Metric value.
+
+        Raises:
+            AssertionError: if dataset has no target or
+                target specified as one-dimensioned, but it is not.
+
+        """
+        assert hasattr(dataset, 'target'), 'Dataset should have target to calculate metric'
+        if self.one_dim:
+            assert dataset.shape[1] == 1, 'Dataset should have single column if metric is one_dim'
+        dataset = dataset.to_cupy()
+        y_true = dataset.target
+        y_pred = dataset.data
+        sample_weight = dataset.weights
+
+        if dropna:
+            sl = ~cp.isnan(y_pred).any(axis=1)
+            y_pred = y_pred[sl]
+            y_true = y_true[sl]
+            if sample_weight is not None:
+                sample_weight = sample_weight[sl]
+
+        if self.one_dim:
+            y_pred = y_pred[:, 0]
+
+        value = self.metric(y_true, y_pred, sample_weight=sample_weight)
+        sign = 2 * float(self.greater_is_better) - 1
+        return value * sign
+
+
 @record_history(enabled=False)
 class Task:
     """
@@ -219,7 +307,7 @@ class Task:
 
     def __init__(self, name: str, loss: Optional[Union[dict, str]] = None, loss_params: Optional[Dict] = None,
                  metric: Optional[Union[str, Callable]] = None, metric_params: Optional[Dict] = None,
-                 greater_is_better: Optional[bool] = None):
+                 greater_is_better: Optional[bool] = None, device: Optional[str] = None):
         """
 
         Args:
@@ -230,6 +318,7 @@ class Task:
             metric: String name or callable.
             metric_params: Additional metric parameters.
             greater_is_better: Whether or not higher value is better.
+            device: Which processor (CPU or GPU) is used for the task.
 
         Note:
             There is 3 different task types:
@@ -300,7 +389,11 @@ class Task:
 
         assert name in _valid_task_names, 'Invalid task name: {}, allowed task names: {}'.format(name, _valid_task_names)
         self._name = name
+        if device is None:
+            device = 'cpu'
+        assert device in ['cpu', 'gpu'], 'The device must be either CPU or GPU!'
 
+        self.device = device
         # add losses
         # if None - infer from task
         self.losses = {}
@@ -329,9 +422,10 @@ class Task:
 
             assert loss in _valid_str_loss_names[self.name], 'Invalid loss name: {} for task {}.'.format(loss, self.name)
 
-            for loss_key, loss_factory in zip(['lgb', 'sklearn', 'torch', 'cb'], [LGBLoss, SKLoss, TORCHLoss, CBLoss]):
+            for loss_key, loss_factory in zip(['lgb', 'sklearn', 'torch', 'cb', 'cuml'], [LGBLoss, SKLoss, TORCHLoss,
+                                                                                          CBLoss, CUMLLoss]):
                 try:
-                    self.losses[loss_key] = loss_factory(loss, loss_params=loss_params)
+                    self.losses[loss_key] = loss_factory(loss, loss_params=loss_params, device=self.device)
                 except (AssertionError, TypeError, ValueError):
                     logger.warning("{0} doesn't support in general case {1} and will not be used.".format(loss_key, loss))
 
@@ -352,18 +446,23 @@ class Task:
 
         # set callback metric for loss
         # if no metric - infer from task
+        print('metric before assign:', metric)
         if metric is None:
             metric = _default_metrics[self.name]
-
+        print('metric after assign:', metric)
         self.metric_params = {}
         if metric_params is not None:
             self.metric_params = metric_params
 
-
         if type(metric) is str:
-
             self._check_metric_from_params(metric, self.metric_params)
-            metric_func = _valid_str_metric_names[self.name][metric]
+
+            if self.device == 'gpu':
+                # define metric among cuml functions
+                metric_func = _valid_str_metric_names_gpu[self.name][metric]
+
+            else:
+                metric_func = _valid_str_metric_names[self.name][metric]
             metric_func = partial(metric_func, **self.metric_params)
             self.metric_func = metric_func
             self.metric_name = metric
@@ -394,8 +493,12 @@ class Task:
         """
         # for now - case of sklearn metric only
         one_dim = self.name in _one_dim_output_tasks
-        dataset_metric = SkMetric(self.metric_func, name=self.metric_name,
-                                  one_dim=one_dim, greater_is_better=self.greater_is_better)
+        if self.device == 'cpu':
+            dataset_metric = SkMetric(self.metric_func, name=self.metric_name,
+                                      one_dim=one_dim, greater_is_better=self.greater_is_better)
+        else:
+            dataset_metric = CumlMetric(self.metric_func, name=self.metric_name,
+                                        one_dim=one_dim, greater_is_better=self.greater_is_better)
 
         return dataset_metric
 
@@ -407,10 +510,10 @@ class Task:
             required_params = set()
         given_params = set(loss_params)
         extra_params = given_params - required_params
-        assert len(extra_params) == 0,\
+        assert len(extra_params) == 0, \
             'For loss {0} given extra params {1}'.format(loss_name, extra_params)
         needed_params = required_params - given_params
-        assert len(needed_params) == 0,\
+        assert len(needed_params) == 0, \
             'For loss {0} required params {1} are not defined'.format(loss_name, needed_params)
 
     @staticmethod

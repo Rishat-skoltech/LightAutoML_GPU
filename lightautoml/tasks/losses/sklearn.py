@@ -33,7 +33,7 @@ class SKLoss(Loss):
     """Loss used for scikit-learn."""
 
     def __init__(self, loss: str, loss_params: Optional[Dict] = None, fw_func: Optional[Callable] = None,
-                 bw_func: Optional[Callable] = None):
+                 bw_func: Optional[Callable] = None, device: Optional[str] = 'cpu'):
         """
 
         Args:
@@ -46,6 +46,7 @@ class SKLoss(Loss):
               Used for predict values transformation.
 
         """
+
         assert loss in ['logloss', 'mse', 'crossentropy', 'rmsle'], 'Not supported in sklearn in general case.'
         self.flg_regressor = loss in ['mse', 'rmsle']
 

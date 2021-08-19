@@ -7,6 +7,9 @@ import torch
 from log_calls import record_history
 from torch import nn
 
+from ..common_metric import _valid_str_metric_names
+from ..common_metric_gpu import _valid_str_metric_names as _valid_str_metric_names_gpu
+
 from .base import Loss
 
 
@@ -244,7 +247,7 @@ _torch_loss_dict = {
 class TORCHLoss(Loss):
     """Loss used for PyTorch."""
 
-    def __init__(self, loss: Union[str, Callable], loss_params: Optional[Dict] = None):
+    def __init__(self, loss: Union[str, Callable], loss_params: Optional[Dict] = None, device: Optional[str] = 'cpu'):
         """
 
         Args:
@@ -252,6 +255,8 @@ class TORCHLoss(Loss):
             loss_params: additional loss parameters.
 
         """
+        assert device in ['cpu', 'gpu'], 'Device must be either CPU or GPU!'
+        self.device = device
         self.loss_params = {}
         if loss_params is not None:
             self.loss_params = loss_params
@@ -262,3 +267,41 @@ class TORCHLoss(Loss):
             self.loss = partial(_torch_loss_dict[loss][0], **self.loss_params)
         else:
             self.loss = partial(loss, **self.loss_params)
+
+    def set_callback_metric(self, metric: Union[str, Callable], greater_is_better: Optional[bool] = None,
+                            metric_params: Optional[Dict] = None, task_name: Optional[Dict] = None):
+        """Callback metric setter.
+
+        Args:
+            metric: Callback metric
+            greater_is_better: Whether or not higher value is better.
+            metric_params: Additional metric parameters.
+            task_name: Name of task.
+
+        Note:
+            Value of ``task_name`` should be one of following options:
+
+            -  `'binary'`
+            - `'reg'`
+            - `'multiclass'`
+
+        """
+
+        assert task_name in ['binary', 'reg', 'multiclass'], 'Incorrect task name: {}'.format(task_name)
+        self.metric = metric
+
+        if metric_params is None:
+            metric_params = {}
+
+        if type(metric) is str:
+            if self.device == 'cpu':
+                metric_dict = _valid_str_metric_names[task_name]
+            else:
+                metric_dict = _valid_str_metric_names_gpu[task_name]
+            self.metric_func = self.metric_wrapper(metric_dict[metric], greater_is_better, metric_params)
+
+            self.metric_name = metric
+        else:
+            # TODO: create check for gpu-compatibility
+            self.metric_func = self.metric_wrapper(metric, greater_is_better, metric_params)
+            self.metric_name = None

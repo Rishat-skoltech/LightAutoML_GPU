@@ -227,15 +227,15 @@ class TabularMLAlgo(MLAlgo):
         # get empty validation data to write prediction
         # TODO: Think about this cast
         preds_ds = cast(CupyDataset, train_valid_iterator.get_validation_data().empty().to_cupy())
-
+        print("preds_ds:", type(preds_ds))
         outp_dim = 1
         if self.task.name == 'multiclass':
             outp_dim = int(cp.max(preds_ds.target) + 1)
         # save n_classes to infer params
         self.n_classes = outp_dim
 
-        preds_arr = cp.zeros((preds_ds.shape[0], outp_dim), dtype=cp.float32)
-        counter_arr = cp.zeros((preds_ds.shape[0], 1), dtype=cp.float32)
+        preds_arr = cp.zeros((train_valid_iterator.get_validation_data().shape[0], outp_dim), dtype=cp.float32)
+        counter_arr = cp.zeros((train_valid_iterator.get_validation_data().shape[0], 1), dtype=cp.float32)
 
         # TODO: Make parallel version later
         for n, (idx, train, valid) in enumerate(train_valid_iterator):

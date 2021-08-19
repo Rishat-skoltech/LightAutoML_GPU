@@ -103,7 +103,8 @@ class CBLoss(Loss):
     """Loss used for CatBoost."""
 
     def __init__(self, loss: Union[str, Callable], loss_params: Optional[Dict] = None,
-                 fw_func: Optional[Callable] = None, bw_func: Optional[Callable] = None):
+                 fw_func: Optional[Callable] = None, bw_func: Optional[Callable] = None,
+                 device: Optional[str] = 'cpu'):
         """
 
         Args:

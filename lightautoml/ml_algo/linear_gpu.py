@@ -8,7 +8,7 @@ import cupy as cp
 from cuml.linear_model import LogisticRegression, ElasticNet, Lasso
 
 from .base_gpu import TabularMLAlgo, TabularDataset
-from .torch_based.linear_model import TorchBasedLinearEstimator, TorchBasedLinearRegression, \
+from .torch_based.linear_model_cupy import TorchBasedLinearEstimator, TorchBasedLinearRegression, \
     TorchBasedLogisticRegression
 from ..dataset.np_pd_dataset_cupy import CudfDataset
 from ..utils.logging import get_logger
@@ -55,9 +55,11 @@ class LinearLBFGS(TabularMLAlgo):
         params = copy(self.params)
         params['loss'] = self.task.losses['torch'].loss
         params['metric'] = self.task.losses['torch'].metric_func
+
         if self.task.name in ['binary', 'multiclass']:
             model = TorchBasedLogisticRegression(output_size=self.n_classes, **params)
         elif self.task.name == 'reg':
+
             model = TorchBasedLinearRegression(output_size=1, **params)
         else:
             raise ValueError('Task not supported')
@@ -96,8 +98,9 @@ class LinearLBFGS(TabularMLAlgo):
 
         model = self._infer_params()
 
+        print("train target type:", type(train.target), train.target)
         model.fit(train.data, train.target, train.weights, valid.data, valid.target, valid.weights)
-
+        print(type(model))
         val_pred = model.predict(valid.data)
 
         return model, val_pred
@@ -119,7 +122,7 @@ class LinearLBFGS(TabularMLAlgo):
 
 
 class LinearL1CD(TabularMLAlgo):
-    """Coordinate descent based on sklearn implementation."""
+    """Coordinate descent based on cuml implementation."""
     _name: str = 'LinearElasticNet'
 
     _default_params = {
@@ -172,8 +175,7 @@ class LinearL1CD(TabularMLAlgo):
 
         suggested_params = copy(self.default_params)
         task = train_valid_iterator.train.task
-
-        assert 'sklearn' in task.losses, 'Sklearn loss should be defined'
+        assert 'cuml' in task.losses, 'Cuml loss should be defined'
 
         if task.name == 'reg':
             # suggested_params['cs'] = list(map(lambda x: 1 / (2 * x), suggested_params['cs']))
@@ -214,9 +216,8 @@ class LinearL1CD(TabularMLAlgo):
 
         _model, cs, l1_ratios, early_stopping = self._infer_params()
 
-        # TODO: check name 'sklearn'
-        train_target, train_weight = self.task.losses['sklearn'].fw_func(train.target, train.weights)
-        valid_target, valid_weight = self.task.losses['sklearn'].fw_func(valid.target, valid.weights)
+        train_target, train_weight = self.task.losses['cuml'].fw_func(train.target, train.weights)
+        valid_target, valid_weight = self.task.losses['cuml'].fw_func(valid.target, valid.weights)
 
         model = deepcopy(_model)
 
@@ -224,8 +225,7 @@ class LinearL1CD(TabularMLAlgo):
         best_pred = None
         best_model = None
 
-        # TODO: check name 'sklearn'
-        metric = self.task.losses['sklearn'].metric_func
+        metric = self.task.losses['cuml'].metric_func
 
         for l1_ratio in sorted(l1_ratios, reverse=True):
 
@@ -293,7 +293,7 @@ class LinearL1CD(TabularMLAlgo):
                 logger.info('Time limit exceeded')
                 break
 
-        val_pred = self.task.losses['sklearn'].bw_func(best_pred)
+        val_pred = self.task.losses['cuml'].bw_func(best_pred)
 
         return best_model, val_pred
 
@@ -309,7 +309,6 @@ class LinearL1CD(TabularMLAlgo):
 
         """
 
-        # TODO: check 'sklearn' name here
-        pred = self.task.losses['sklearn'].bw_func(self._predict_w_model_type(model, dataset.data))
+        pred = self.task.losses['cuml'].bw_func(self._predict_w_model_type(model, dataset.data))
 
         return pred

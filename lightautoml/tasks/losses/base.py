@@ -7,6 +7,7 @@ from log_calls import record_history
 
 from ..utils import infer_gib
 from ..common_metric import _valid_str_metric_names
+from ..common_metric_gpu import _valid_str_metric_names as _valid_str_metric_names_gpu
 
 
 @record_history(enabled=False)
@@ -140,6 +141,7 @@ class Loss:
         if type(metric) is str:
             metric_dict = _valid_str_metric_names[task_name]
             self.metric_func = self.metric_wrapper(metric_dict[metric], greater_is_better, metric_params)
+
             self.metric_name = metric
         else:
             self.metric_func = self.metric_wrapper(metric, greater_is_better, metric_params)
