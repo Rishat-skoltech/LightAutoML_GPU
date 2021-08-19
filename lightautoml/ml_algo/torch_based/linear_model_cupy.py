@@ -100,6 +100,7 @@ class CatLogisticRegression(CatLinear):
             categories: Input categorical features.
 
         """
+
         x = super().forward(numbers, categories)
         x = torch.clamp(x, -50, 50)
         x = self.sigmoid(x)
@@ -115,7 +116,6 @@ class CatRegression(CatLinear):
         super().__init__(numeric_size, embed_sizes=embed_sizes, output_size=output_size)
 
 
-@record_history(enabled=False)
 class CatMulticlass(CatLinear):
     """Realisation of multi-class linear classifier."""
 
@@ -131,7 +131,6 @@ class CatMulticlass(CatLinear):
         return x
 
 
-@record_history(enabled=False)
 class TorchBasedLinearEstimator:
     """Linear model based on torch L-BFGS solver.
 
@@ -156,6 +155,7 @@ class TorchBasedLinearEstimator:
             metric: Metric function. Format: metric(y_true, y_preds, sample_weight = None) -> float (greater_is_better).
 
         """
+
         self.data_size = data_size
         self.categorical_idx = categorical_idx
         self.embed_sizes = embed_sizes
@@ -279,7 +279,9 @@ class TorchBasedLinearEstimator:
 
         """
         # weighted loss
+
         loss = self.loss(y_true, y_pred, sample_weight=weights)
+        return loss
 
         n = y_true.shape[0]
         if weights is not None:
@@ -311,7 +313,7 @@ class TorchBasedLinearEstimator:
         data, data_cat = self._prepare_data(data)
         if len(y.shape) == 1:
             y = y[:, cp.newaxis]
-        y = torch.as_tensor(y.astype(np.float32), device='cuda')
+        y = torch.as_tensor(y.astype(cp.float32), device='cuda')
         if weights is not None:
             weights = torch.as_tensor(weights.astype(cp.float32), device='cuda')
 
@@ -331,7 +333,11 @@ class TorchBasedLinearEstimator:
             self._optimize(data, data_cat, y, weights, c)
 
             val_pred = self._score(data_val, data_val_cat)
-            score = self.metric(y_val, val_pred, weights_val)
+
+            score = self.metric(y_val, val_pred[:,0], weights_val)
+            from cuml.metrics import roc_auc_score
+            # print(type(y_val.mean()), val_pred.mean(), roc_auc_score(y_val.astype(cp.float64), val_pred.astype(cp.float64)))
+            # print("Score is:", score)
             logger.info('Linear model: C = {0} score = {1}'.format(c, score))
             if score > best_score:
                 best_score = score
@@ -339,11 +345,12 @@ class TorchBasedLinearEstimator:
                 es = 0
             else:
                 es += 1
-
+            print("BEST MODEL:", best_model)
             if es >= self.early_stopping:
                 break
-
-        self.model = best_model
+        if best_model is not None:
+            print("saving best model...")
+            self.model = best_model
 
         return self
 
@@ -411,9 +418,8 @@ class TorchBasedLogisticRegression(TorchBasedLinearEstimator):
 
         if loss is None:
             loss = TorchLossWrapper(_loss)
-
         super().__init__(data_size, categorical_idx, embed_sizes, output_size, cs, max_iter, tol, early_stopping, loss, metric)
-        self.model = _model(self.data_size - len(self.categorical_idx), self.embed_sizes, self.output_size)
+        self.model = _model(self.data_size - len(self.categorical_idx), self.embed_sizes, self.output_size).cuda()
 
     def predict(self, data: cp.ndarray) -> cp.ndarray:
         """Inference phase.
@@ -456,7 +462,7 @@ class TorchBasedLinearRegression(TorchBasedLinearEstimator):
         if loss is None:
             loss = TorchLossWrapper(nn.MSELoss)
         super().__init__(data_size, categorical_idx, embed_sizes, output_size, cs, max_iter, tol, early_stopping, loss, metric)
-        self.model = CatRegression(self.data_size - len(self.categorical_idx), self.embed_sizes, self.output_size)
+        self.model = CatRegression(self.data_size - len(self.categorical_idx), self.embed_sizes, self.output_size).cuda()
 
     def predict(self, data: cp.ndarray) -> cp.ndarray:
         """Inference phase.
