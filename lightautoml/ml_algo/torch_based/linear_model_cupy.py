@@ -9,6 +9,7 @@ import cupy as cp
 import torch
 from log_calls import record_history
 from scipy import sparse
+from cupyx.scipy import sparse as sparse_gpu
 from torch import nn
 from torch import optim
 
@@ -16,27 +17,26 @@ from ...tasks.losses import TorchLossWrapper
 from ...utils.logging import get_logger
 
 logger = get_logger(__name__)
-ArrayOrSparseMatrix = Union[cp.ndarray]
+ArrayOrSparseMatrix = Union[cp.ndarray, sparse_gpu.spmatrix]
 
-# TODO: uncomment after sparse matrix is added
-#@record_history(enabled=False)
-#def convert_scipy_sparse_to_torch_float(matrix: sparse.spmatrix) -> torch.Tensor:
-#    """Convert scipy sparse matrix to torch sparse tensor.
-#
-#    Args:
-#        matrix: Matrix to convert.
-#
-#    Returns:
-#        Matrix in torch.Tensor format.
-#
-#   """
-#    matrix = sparse.coo_matrix(matrix, dtype=np.float32)
-#    np_idx = np.stack([matrix.row, matrix.col], axis=0).astype(np.int64)
-#    idx = torch.from_numpy(np_idx)
-#    values = torch.from_numpy(matrix.data)
-#    sparse_tensor = torch.sparse_coo_tensor(idx, values, size=matrix.shape)
-#
-#    return sparse_tensor
+
+def convert_scipy_sparse_to_torch_float(matrix: sparse_gpu.spmatrix) -> torch.Tensor:
+    """Convert cupy sparse matrix to torch sparse tensor.
+
+    Args:
+        matrix: Matrix to convert.
+
+    Returns:
+        Matrix in torch.Tensor format.
+
+   """
+    matrix = sparse_gpu.coo_matrix(matrix, dtype=cp.float32)
+    cp_idx = cp.stack([matrix.row, matrix.col], axis=0).astype(cp.int64)
+    idx = torch.as_tensor(cp_idx, device='cuda')
+    values = torch.as_tensor(matrix.data, device='cuda')
+    sparse_tensor = torch.sparse_coo_tensor(idx, values, size=matrix.shape)
+
+    return sparse_tensor
 
 
 @record_history(enabled=False)
@@ -180,27 +180,27 @@ class TorchBasedLinearEstimator:
             Tuple (numeric_features, cat_features).
 
         """
-        # TODO: uncomment this after sparse matrix is supported
-        # if sparse.issparse(data):
-        #     return self._prepare_data_sparse(data)
+
+        if sparse.issparse(data):
+            return self._prepare_data_sparse(data)
 
         return self._prepare_data_dense(data)
 
-    #def _prepare_data_sparse(self, data: sparse.spmatrix):
-    #    """Prepare sparse matrix.
-    #
-    #    Only supports numeric features.
-    #
-    #    Args:
-    #        data: data to prepare.
-    #
-    #    Returns:
-    #        Tuple (numeric_features, `None`).
+    def _prepare_data_sparse(self, data: sparse_gpu.spmatrix):
+        """Prepare sparse matrix.
 
-    #    """
-    #    assert len(self.categorical_idx) == 0, 'Support only numeric with sparse matrix'
-    #    data = convert_scipy_sparse_to_torch_float(data)
-    #    return data, None
+        Only supports numeric features.
+
+        Args:
+            data: data to prepare.
+
+        Returns:
+            Tuple (numeric_features, `None`).
+
+        """
+        assert len(self.categorical_idx) == 0, 'Support only numeric with sparse matrix'
+        data = convert_scipy_sparse_to_torch_float(data)
+        return data, None
 
     def _prepare_data_dense(self, data: cp.ndarray):
         """Prepare dense matrix.

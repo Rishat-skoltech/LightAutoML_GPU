@@ -198,7 +198,7 @@ class OHEEncoder(LAMLTransformerGPU):
         """Features list."""
         return self._features
 
-    def __init__(self, make_sparse: Optional[bool] = False, total_feats_cnt: Optional[int] = None, dtype: type = cp.float32):
+    def __init__(self, make_sparse: Optional[bool] = True, total_feats_cnt: Optional[int] = None, dtype: type = cp.float32):
         """
 
         Args:
@@ -252,8 +252,8 @@ class OHEEncoder(LAMLTransformerGPU):
 
         features = []
         for cats, name in zip(self.ohe.categories_, dataset.features):
-            pd_cats = cats.to_pandas()
-            features.extend(['ohe_{0}__{1}'.format(x, name) for x in pd_cats])
+            cudf_cats = cats.to_pandas()
+            features.extend(['ohe_{0}__{1}'.format(x, name) for x in cudf_cats])
         self._features = features
 
         return self
@@ -276,12 +276,12 @@ class OHEEncoder(LAMLTransformerGPU):
         data = dataset.data
 
         # transform
-        data = self.ohe.transform(data)
+        data = self.ohe.transform(data).tocsr()
 
         # create resulted
         output = dataset.empty()
         if self.make_sparse:
-            output = output.to_csr()
+            output = output.to_sparse_gpu()
 
         output.set_data(data, self.features, NumericRole(self.dtype))
 

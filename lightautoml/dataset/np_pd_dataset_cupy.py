@@ -12,6 +12,7 @@ import dask_cudf
 
 from pandas import Series, DataFrame
 from scipy import sparse
+from cupyx.scipy import sparse as sparse_cupy
 
 from .base import LAMLDataset, RolesDict, IntIdx, valid_array_attributes, array_attr_roles
 from .roles import ColumnRole, NumericRole, DropRole
@@ -23,6 +24,7 @@ from ..tasks.base import Task
 NpFeatures = Union[Sequence[str], str, None]
 NpRoles = Union[Sequence[ColumnRole], ColumnRole, RolesDict, None]
 DenseSparseArray = Union[np.ndarray, sparse.csr_matrix]
+DenseSparseArrayGPU = Union[np.ndarray, sparse.csr_matrix, cp.ndarray, sparse_cupy.csr_matrix]
 FrameOrSeries = Union[DataFrame, Series]
 Dataset = TypeVar("Dataset", bound=LAMLDataset)
 
@@ -292,6 +294,16 @@ class NumpyDataset(LAMLDataset):
 
         return CSRSparseDataset(data, features, roles, task, **params)
 
+    def to_sparse_gpu(self):
+        """Convert to cupy-based csr.
+
+        Returns:
+            Same dataset in CSRSparseDataset format.
+
+        """
+
+        return self.to_cupy().to_sparse_gpu()
+
     def to_pandas(self) -> 'PandasDataset':
         """Convert to PandasDataset.
 
@@ -348,7 +360,7 @@ class CupyDataset(NumpyDataset):
         if self.data.dtype != self.dtype:
             self.data = self.data.astype(self.dtype)
 
-    def __init__(self, data: Optional[DenseSparseArray], features: NpFeatures = (), roles: NpRoles = None,
+    def __init__(self, data: Optional[DenseSparseArrayGPU], features: NpFeatures = (), roles: NpRoles = None,
                  task: Optional[Task] = None, **kwargs: np.ndarray):
         """Create dataset from numpy/cupy arrays.
 
@@ -474,10 +486,30 @@ class CupyDataset(NumpyDataset):
         """Convert to csr.
 
         Returns:
-            Same dataset in CSRSparseDatatset format.
+            Same dataset in CSRSparseDataset format.
         """
 
         return self.to_numpy().to_csr()
+
+    def to_sparse_gpu(self) -> 'CupySparseDataset':
+
+        """Convert to cupy-based csr.
+
+        Returns:
+            Same dataset in CupySparseDataset format (CSR).
+
+        """
+        assert all([self.roles[x].name == 'Numeric' for x in self.features]),\
+            'Only numeric data accepted in sparse dataset'
+        data = None if self.data is None else sparse_cupy.csr_matrix(self.data)
+
+        roles = self.roles
+        features = self.features
+        # target and etc ..
+        params = dict(((x, self.__dict__[x]) for x in self._array_like_attrs))
+        task = self.task
+
+        return CupySparseDataset(data, features, roles, task, **params)
 
     def to_cudf(self) -> 'CudfDataset':
         """Convert to PandasDataset.
@@ -643,6 +675,144 @@ class CSRSparseDataset(NumpyDataset):
 
         """
         return dataset.to_csr()
+
+
+class CupySparseDataset(CupyDataset):
+    """Dataset that contains sparse features on GPU and cp.ndarray targets."""
+    _init_checks = ()
+    _data_checks = ()
+    _concat_checks = ()
+    _dataset_type = 'CupySparseDataset'
+
+    @staticmethod
+    def _get_cols(data: Any, k: Any):
+        """Not implemented."""
+        raise NotImplementedError
+
+    @staticmethod
+    def _set_col(data: Any, k: Any, val: Any):
+        """Not implemented."""
+        raise NotImplementedError
+
+    def to_pandas(self) -> Any:
+        """Not implemented."""
+        raise NotImplementedError
+
+    def to_cupy(self) -> 'CupyDataset':
+        """Convert to CupyDataset.
+
+        Returns:
+            CupyDataset.
+
+        """
+        # check for empty
+        data = None if self.data is None else self.data.toarray()
+        assert type(data) is cp.ndarray, "Data conversion failed! Check types of datasets."
+        roles = self.roles
+        features = self.features
+        # target and etc ..
+        params = dict(((x, self.__dict__[x]) for x in self._array_like_attrs))
+        task = self.task
+
+        return CupyDataset(data, features, roles, task, **params)
+
+    @property
+    def shape(self) -> Tuple[Optional[int], Optional[int]]:
+        """Get size of 2d feature matrix.
+
+        Returns:
+            tuple of 2 elements.
+
+        """
+        rows, cols = None, None
+        try:
+            rows, cols = self.data.shape
+        except TypeError:
+            if len(self._array_like_attrs) > 0:
+                rows = len(self.__dict__[self._array_like_attrs[0]])
+        return rows, cols
+
+    @staticmethod
+    def _hstack(datasets: Sequence[Union[sparse_cupy.csr_matrix, cp.ndarray]]) -> sparse_cupy.csr_matrix:
+        """Concatenate function for sparse and numpy arrays.
+
+        Args:
+            datasets: Sequence of csr_matrix or np.ndarray.
+
+        Returns:
+            Sparse matrix.
+
+        """
+        return sparse_cupy.hstack(datasets, format='csr')
+
+    def __init__(self, data: Optional[DenseSparseArrayGPU], features: NpFeatures = (), roles: NpRoles = None,
+                 task: Optional[Task] = None, **kwargs: np.ndarray):
+        """Create dataset from csr_matrix.
+
+        Args:
+            data: csr_matrix of features.
+            features: Features names.
+            roles: Roles specifier.
+            task: Task specifier.
+            **kwargs: Named attributes like target, group etc ..
+
+        Note:
+            For different type of parameter feature there is different behavior:
+
+                - list, should be same len as data.shape[1]
+                - None - automatic set names like feat_0, feat_1 ...
+                - Prefix - automatic set names like Prefix_0, Prefix_1 ...
+
+            For different type of parameter feature there is different behavior:
+
+                - list, should be same len as data.shape[1].
+                - None - automatic set NumericRole(cp.float32).
+                - ColumnRole - single role.
+                - dict.
+
+        """
+        self._initialize(task, **kwargs)
+        if data is not None:
+            self.set_data(data, features, roles)
+
+    def set_data(self, data: DenseSparseArrayGPU, features: NpFeatures = (), roles: NpRoles = None):
+        """Inplace set data, features, roles for empty dataset.
+
+        Args:
+            data: csr_matrix of features.
+            features: features names.
+            roles: Roles specifier.
+
+        Note:
+            For different type of parameter feature there is different behavior:
+
+                - list, should be same len as data.shape[1]
+                - None - automatic set names like feat_0, feat_1 ...
+                - Prefix - automatic set names like Prefix_0, Prefix_1 ...
+
+            For different type of parameter feature there is different behavior:
+
+                - list, should be same len as data.shape[1].
+                - None - automatic set NumericRole(cp.float32).
+                - ColumnRole - single role.
+                - dict.
+
+        """
+        assert data is None or type(data) is sparse.csr_matrix or type(data) is sparse_cupy.csr_matrix,\
+            'CSRSparseDataset support only csr_matrix features'
+        LAMLDataset.set_data(self, data, features, roles)
+        self._check_dtype()
+
+    @staticmethod
+    def from_dataset(dataset: Dataset) -> 'CSRSparseDataset':
+        """Convert dataset to sparse dataset.
+
+        Returns:
+            Dataset in sparse form.
+
+        """
+        assert type(dataset) in DenseSparseArrayGPU, 'Only Numpy/Cupy based datasets can be converted to sparse datasets!'
+        return dataset.to_sparse_gpu()
 
 
 class PandasDataset(LAMLDataset):
