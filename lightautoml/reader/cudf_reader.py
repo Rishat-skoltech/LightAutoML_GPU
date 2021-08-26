@@ -20,8 +20,8 @@ from .utils_gpu import set_sklearn_folds_gpu
 from .guess_roles import calc_encoding_rules, calc_category_rules,\
                   rule_based_roles_guess, rule_based_cat_handler_guess
 
-from .guess_roles_gpu import get_numeric_roles_stat_gpu,\
-    get_category_roles_stat_gpu, get_null_scores_gpu
+#from .guess_roles_gpu import get_numeric_roles_stat_gpu,\
+#    get_category_roles_stat_gpu, get_null_scores_gpu
 
 from ..dataset.base import valid_array_attributes, array_attr_roles
 from ..dataset.roles import ColumnRole, DropRole, DatetimeRole, CategoryRole, NumericRole
