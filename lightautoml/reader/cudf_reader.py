@@ -169,7 +169,7 @@ class CudfReader(PandasToPandasReader):
         dataset = CudfDataset(train_data[self.used_features], self.roles,
                               task=self.task, **kwargs)
 
-        if self.advanced_roles:
+        '''if self.advanced_roles:
 
             new_roles = self.advanced_roles_guess(dataset,
                                             manual_roles=parsed_roles)
@@ -181,7 +181,7 @@ class CudfReader(PandasToPandasReader):
             self._roles = {x: new_roles[x]\
                            for x in new_roles if x not in droplist}
             dataset = CudfDataset(train_data[self.used_features],
-                                  self.roles, task=self.task, **kwargs)
+                                  self.roles, task=self.task, **kwargs)'''
         return dataset
 
     def _create_target(self, target: Series):
