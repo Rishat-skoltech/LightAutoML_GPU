@@ -285,7 +285,7 @@ class CudfReader(PandasToPandasReader):
 
         return dataset
 
-    def advanced_roles_guess(self, dataset: CudfDataset,
+    '''def advanced_roles_guess(self, dataset: CudfDataset,
                          manual_roles: Optional[RolesDict] = None) -> RolesDict:
         """Advanced roles guess over user's definition and reader's simple guessing.
 
@@ -348,7 +348,7 @@ class CudfReader(PandasToPandasReader):
             logger.info('Feats was rejected during automatic roles guess: {0}'.format(rejected))
             new_roles_dict = {**new_roles_dict,\
                               **{x: DropRole() for x in rejected}}
-        return new_roles_dict
+        return new_roles_dict'''
 
     def _is_ok_feature(self, feature: Series) -> bool:
         """Check if column is filled well to be a feature.
