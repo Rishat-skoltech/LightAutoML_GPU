@@ -3,11 +3,13 @@
 from copy import deepcopy
 from typing import Sequence, Callable, Optional, Union
 
+import dask_cudf
+
 import numpy as np
 import cupy as cp
 
 import torch
-from log_calls import record_history
+
 from scipy import sparse
 from cupyx.scipy import sparse as sparse_gpu
 from torch import nn
@@ -16,116 +18,11 @@ from torch import optim
 from ...tasks.losses import TorchLossWrapper
 from ...utils.logging import get_logger
 
+from linear_model_cupy import CatLinear, CatLogisticRegression, CatRegression, CatMulticlass
+
 logger = get_logger(__name__)
 ArrayOrSparseMatrix = Union[cp.ndarray, sparse_gpu.spmatrix]
 
-
-def convert_scipy_sparse_to_torch_float(matrix: sparse_gpu.spmatrix) -> torch.Tensor:
-    """Convert cupy sparse matrix to torch sparse tensor.
-
-    Args:
-        matrix: Matrix to convert.
-
-    Returns:
-        Matrix in torch.Tensor format.
-
-   """
-    matrix = sparse_gpu.coo_matrix(matrix, dtype=cp.float32)
-    cp_idx = cp.stack([matrix.row, matrix.col], axis=0).astype(cp.int64)
-    idx = torch.as_tensor(cp_idx, device='cuda')
-    values = torch.as_tensor(matrix.data, device='cuda')
-    sparse_tensor = torch.sparse_coo_tensor(idx, values, size=matrix.shape)
-
-    return sparse_tensor
-
-
-class CatLinear(nn.Module):
-    """Simple linear model to handle numeric and categorical features."""
-
-    def __init__(self, numeric_size: int = 0, embed_sizes: Sequence[int] = (), output_size: int = 1):
-        """
-        Args:
-            numeric_size: Number of numeric features.
-            embed_sizes: Embedding sizes.
-            output_size: Size of output layer.
-
-        """
-        super().__init__()
-        self.bias = nn.Parameter(torch.zeros(output_size))
-        # add numeric if it is defined
-        self.linear = None
-        if numeric_size > 0:
-            self.linear = nn.Linear(in_features=numeric_size, out_features=output_size, bias=False)
-            nn.init.zeros_(self.linear.weight)
-
-        # add categories if it is defined
-        self.cat_params = None
-        if len(embed_sizes) > 0:
-            self.cat_params = nn.Parameter(torch.zeros(sum(embed_sizes), output_size))
-            self.embed_idx = torch.LongTensor(embed_sizes).cumsum(dim=0) - torch.LongTensor(embed_sizes)
-
-    def forward(self, numbers: Optional[torch.Tensor] = None, categories: Optional[torch.Tensor] = None):
-        """Forward-pass.
-
-        Args:
-            numbers: Input numeric features.
-            categories: Input categorical features.
-
-        """
-        x = self.bias
-
-        if self.linear is not None:
-            x = x + self.linear(numbers)
-
-        if self.cat_params is not None:
-            x = x + self.cat_params[categories + self.embed_idx].sum(dim=1)
-
-        return x
-
-
-class CatLogisticRegression(CatLinear):
-    """Realisation of torch-based logistic regression."""
-
-    def __init__(self, numeric_size: int, embed_sizes: Sequence[int] = (), output_size: int = 1):
-        super().__init__(numeric_size, embed_sizes=embed_sizes, output_size=output_size)
-        self.sigmoid = nn.Sigmoid()
-
-    def forward(self, numbers: Optional[torch.Tensor] = None, categories: Optional[torch.Tensor] = None):
-        """Forward-pass. Sigmoid func at the end of linear layer.
-
-        Args:
-            numbers: Input numeric features.
-            categories: Input categorical features.
-
-        """
-
-        x = super().forward(numbers, categories)
-        x = torch.clamp(x, -50, 50)
-        x = self.sigmoid(x)
-
-        return x
-
-
-class CatRegression(CatLinear):
-    """Realisation of torch-based linear regreession."""
-
-    def __init__(self, numeric_size: int, embed_sizes: Sequence[int] = (), output_size: int = 1):
-        super().__init__(numeric_size, embed_sizes=embed_sizes, output_size=output_size)
-
-
-class CatMulticlass(CatLinear):
-    """Realisation of multi-class linear classifier."""
-
-    def __init__(self, numeric_size: int, embed_sizes: Sequence[int] = (), output_size: int = 1):
-        super().__init__(numeric_size, embed_sizes=embed_sizes, output_size=output_size)
-        self.softmax = nn.Softmax(dim=1)
-
-    def forward(self, numbers: Optional[torch.Tensor] = None, categories: Optional[torch.Tensor] = None):
-        x = super().forward(numbers, categories)
-        x = torch.clamp(x, -50, 50)
-        x = self.softmax(x)
-
-        return x
 
 
 class TorchBasedLinearEstimator:
@@ -177,27 +74,12 @@ class TorchBasedLinearEstimator:
             Tuple (numeric_features, cat_features).
 
         """
-
-        if sparse.issparse(data):
-            return self._prepare_data_sparse(data)
+        # TODO: add sparse support
+        # if sparse.issparse(data):
+        #     return self._prepare_data_sparse(data)
 
         return self._prepare_data_dense(data)
 
-    def _prepare_data_sparse(self, data: sparse_gpu.spmatrix):
-        """Prepare sparse matrix.
-
-        Only supports numeric features.
-
-        Args:
-            data: data to prepare.
-
-        Returns:
-            Tuple (numeric_features, `None`).
-
-        """
-        assert len(self.categorical_idx) == 0, 'Support only numeric with sparse matrix'
-        data = convert_scipy_sparse_to_torch_float(data)
-        return data, None
 
     def _prepare_data_dense(self, data: cp.ndarray):
         """Prepare dense matrix.
@@ -288,6 +170,15 @@ class TorchBasedLinearEstimator:
         penalty = torch.norm(all_params, 2).pow(2) / 2 / n
 
         return loss + .5 * penalty / c
+
+    def fit_predict(self, data: dask_cudf.DataFrame,
+                    y: dask_cudf.DataFrame,
+                    weights: Optional[cp.ndarray] = None,
+                    data_val: Optional[dask_cudf.DataFrame] = None,
+                    y_val: Optional[dask_cudf.DataFrame] = None,
+                    weights_val: Optional[cp.ndarray] = None):
+        def _train_distributed():
+            pass
 
     def fit(self, data: cp.ndarray, y: cp.ndarray, weights: Optional[np.ndarray] = None,
             data_val: Optional[np.ndarray] = None, y_val: Optional[np.ndarray] = None, weights_val: Optional[np.ndarray] = None):
