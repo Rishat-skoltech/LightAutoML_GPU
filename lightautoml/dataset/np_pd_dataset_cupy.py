@@ -1070,6 +1070,26 @@ class CudfDataset(PandasDataset):
     _concat_checks = ()
     _dataset_type = 'CudfDataset'
 
+    @property
+    def features(self) -> List[str]:
+        """Get list of features.
+
+        Returns:
+            list of features.
+
+        """
+        return [] if self.data is None else list(self.data.columns)
+
+    @features.setter
+    def features(self, val: None):
+        """Ignore setting features.
+
+        Args:
+            val: ignored.
+
+        """
+        pass
+
     def __init__(self, data: Optional[DataFrame] = None, roles: Optional[RolesDict] = None, task: Optional[Task] = None,
                  **kwargs: Series):
         """Create dataset from `cudf.core.dataframe.DataFrame` and ` cudf.core.series.Series`
@@ -1305,7 +1325,6 @@ class CudfDataset(PandasDataset):
         data = self.data
         roles = self.roles
         task = self.task
-
         params = dict(((x, self.__dict__[x].values) for x in self._array_like_attrs))
 
         return DaskCudfDataset(data, roles, task, npartitions, **params)
@@ -1336,6 +1355,26 @@ class DaskCudfDataset(LAMLDataset):
     _data_checks = ()
     _concat_checks = ()
     _dataset_type = 'CudfDataset'
+
+    @property
+    def features(self) -> List[str]:
+        """Get list of features.
+
+        Returns:
+            list of features.
+
+        """
+        return [] if self.data is None else list(self.data.columns)
+
+    @features.setter
+    def features(self, val: None):
+        """Ignore setting features.
+
+        Args:
+            val: ignored.
+
+        """
+        pass
 
     def __init__(self, data: Optional[DataFrame] = None, roles: Optional[RolesDict] = None, task: Optional[Task] = None,
                  npartitions: int = None, **kwargs: Series):
