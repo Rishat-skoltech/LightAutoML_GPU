@@ -10,7 +10,10 @@ from cuml.linear_model import LogisticRegression, ElasticNet, Lasso
 from .base_gpu import TabularMLAlgo, TabularDataset
 from .torch_based.linear_model_cupy import TorchBasedLinearEstimator, TorchBasedLinearRegression, \
     TorchBasedLogisticRegression
-from ..dataset.np_pd_dataset_cupy import CudfDataset
+
+from .torch_based.linear_model_distributed import TorchBasedLinearEstimator as TLE_dask, \
+    TorchBasedLogisticRegression as TLR_dask, TorchBasedLinearRegression as TLinR_dask
+from ..dataset.np_pd_dataset_cupy import CudfDataset, DaskCudfDataset
 from ..utils.logging import get_logger
 from ..validation.base import TrainValidIterator
 
@@ -65,6 +68,72 @@ class LinearLBFGS(TabularMLAlgo):
             raise ValueError('Task not supported')
 
         return model
+    def _infer_params_dask(self) -> TorchBasedLinearEstimator:
+
+        params = copy(self.params)
+        params['loss'] = self.task.losses['torch'].loss
+        params['metric'] = self.task.losses['torch'].metric_func
+
+        if self.task.name in ['binary', 'multiclass']:
+            model = TLR_dask(output_size=self.n_classes, **params)
+        elif self.task.name == 'reg':
+
+            model = TLinR_dask(output_size=1, **params)
+        else:
+            raise ValueError('Task not supported')
+
+        return model
+
+    # TODO: only for debugging purposes!
+
+    def fit_predict_dask_(self, train_valid_iterator: TrainValidIterator):
+        """Fit and then predict accordig the strategy that uses train_valid_iterator.
+
+        If item uses more then one time it will
+        predict mean value of predictions.
+        If the element is not used in training then
+        the prediction will be ``cp.nan`` for this item
+
+        Args:
+            train_valid_iterator: Classic cv-iterator.
+
+        Returns:
+            Dataset with predicted values.
+
+        """
+
+        assert self.is_fitted is False, 'Algo is already fitted'
+        # init params on input if no params was set before
+        if self._params is None:
+            self.params = self.init_params_on_input(train_valid_iterator)
+
+        # save features names
+        self._features = train_valid_iterator.features
+        # get metric and loss if None
+        self.task = train_valid_iterator.train.task
+
+        # get empty validation data to write prediction
+        # TODO: Think about this cast
+        outp_dim = 1
+        if self.task.name == 'multiclass':
+            outp_dim = int(train_valid_iterator.train.target.compute().values.max()+1)
+        # save n_classes to infer params
+        self.n_classes = outp_dim
+
+
+
+        # for n, (idx, train, valid) in enumerate(train_valid_iterator):
+        model = self._infer_params_dask()
+        print(model.__class__.__name__)
+        print(model.model)
+        # print(train.data.shape)
+        print(type(train_valid_iterator.train))
+        model.fit(train_valid_iterator.train.data, train_valid_iterator.train.target)
+
+        # print(f'round {n}')
+
+        return "Passed"
+
 
     def init_params_on_input(self, train_valid_iterator: TrainValidIterator) -> dict:
 
@@ -80,6 +149,7 @@ class LinearLBFGS(TabularMLAlgo):
 
         return suggested_params
 
+
     def fit_predict_single_fold(self, train: TabularDataset, valid: TabularDataset
                                 ) -> Tuple[TorchBasedLinearEstimator, cp.ndarray]:
         """Train on train dataset and predict on holdout dataset.
@@ -92,11 +162,15 @@ class LinearLBFGS(TabularMLAlgo):
             Target predictions for valid dataset.
 
         """
+        # TODO: make revision upon finish of dask+torch
+
         if type(train) is CudfDataset:
             train = train.to_cupy()
             valid = valid.to_cupy()
+            model = self._infer_params()
 
-        model = self._infer_params()
+        if type(train) is DaskCudfDataset:
+            model = self._infer_params_dask()
 
         model.fit(train.data, train.target, train.weights, valid.data, valid.target, valid.weights)
         val_pred = model.predict(valid.data)
@@ -285,8 +359,6 @@ class LinearL1CD(TabularMLAlgo):
                 best_score = c_best_score
                 best_pred = deepcopy(c_best_pred)
                 best_model = deepcopy(c_best_model)
-                # TODO: remove this print
-                print("BEST MODEL:", best_model)
 
             if self.timer.time_limit_exceeded():
                 logger.info('Time limit exceeded')

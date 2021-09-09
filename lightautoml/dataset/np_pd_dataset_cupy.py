@@ -1417,10 +1417,12 @@ class DaskCudfDataset(LAMLDataset):
         if isinstance(data, pd.DataFrame):
             data = cudf.DataFrame(data)
         elif isinstance(data, cudf.DataFrame):
+            data = dask_cudf.from_cudf(data, npartitions=self.npartitions)
+        elif isinstance(data, dask_cudf.DataFrame):
             pass
         else:
             raise ValueError('Data type must be either pd.DataFrame or cudf.DataFrame.')
-        data = dask_cudf.from_cudf(data, npartitions=self.npartitions)
+
         super().set_data(data, features, roles)
 
     @staticmethod
@@ -1437,7 +1439,7 @@ class DaskCudfDataset(LAMLDataset):
         return cudf.concat(datasets, axis=1)
 
     @staticmethod
-    def _get_rows(data: DataFrame, k: IntIdx) -> FrameOrSeries:
+    def _get_rows(data: DataFrame, k) -> FrameOrSeries:
         """Define how to get rows slice.
 
         Args:
@@ -1448,8 +1450,8 @@ class DaskCudfDataset(LAMLDataset):
             Sliced rows.
 
         """
-        raise NotImplementedError
-        # return data.iloc[k]
+
+        return data.loc[k].persist()  # .compute()
 
     @staticmethod
     def _get_cols(data: DataFrame, k: IntIdx) -> FrameOrSeries:

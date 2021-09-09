@@ -8,21 +8,97 @@ import dask_cudf
 import numpy as np
 import cupy as cp
 
+import os
+
 import torch
 
-from scipy import sparse
 from cupyx.scipy import sparse as sparse_gpu
 from torch import nn
 from torch import optim
+import torch.multiprocessing as mp
+from torch.nn.parallel import DistributedDataParallel as DDP
+import torch.distributed as dist
 
 from ...tasks.losses import TorchLossWrapper
-from ...utils.logging import get_logger
+# from ...utils.logging import get_logger
 
-from linear_model_cupy import CatLinear, CatLogisticRegression, CatRegression, CatMulticlass
+from .linear_model_cupy import CatLinear, CatLogisticRegression, CatRegression, CatMulticlass
 
-logger = get_logger(__name__)
+# logger = get_logger(__name__)
 ArrayOrSparseMatrix = Union[cp.ndarray, sparse_gpu.spmatrix]
 
+
+def _setup(rank, world_size):
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12355'
+
+    # initialize the process group
+    dist.init_process_group("gloo", rank=rank, world_size=world_size)
+
+
+def _cleanup():
+    dist.destroy_process_group()
+
+
+def _prepare_data(data, rank, cat_idx):
+    print("Before partitioning: ", data.compute().shape)
+    print(f"Rank is {rank}")
+    data_part = data.get_partition(rank).compute().values
+    print("Shape of computed partition:", data_part.shape)
+    device_id = f'cuda:{rank}'
+    device_id = 'cuda'
+    print("dev id:",device_id)
+    if 0 < len(cat_idx) < data.shape[1]:
+        # noinspection PyTypeChecker
+        data_cat = torch.as_tensor(data_part[:, cat_idx].astype(cp.int64), device=device_id)
+        data_ = torch.as_tensor(data_part[:, np.setdiff1d(np.arange(data_part.shape[1]), cat_idx)],
+                                device=device_id)
+        return data_, data_cat
+
+    elif len(cat_idx) == 0:
+        print("In _prepare_data() type of data is", type(data_part), 'shape is', data_part.shape)
+        data_ = torch.as_tensor(data_part, device=device_id)
+        return data_, None
+
+    else:
+        data_cat = torch.as_tensor(data_part.astype(cp.int64), device=device_id)
+        return None, data_cat
+
+
+def _train_distributed(rank, world_size, data, y, model, max_iter_, tol_, weights, cat_idx):
+    _setup(rank, world_size)
+    data, data_cat = _prepare_data(data, rank, cat_idx)
+    print("Type of y:", type(y), y.shape)
+    y = torch.as_tensor(y.get_partition(rank).compute().values, device=f'cuda:{rank}')
+    if weights is not None:
+        weights = torch.as_tensor(weights.astype(cp.float32), device=f'cuda:{rank}')
+
+    dist_model = DDP(model, device_ids=[rank])
+    loss_fn = torch.nn.BCELoss()
+    dist_model.train()
+    opt = optim.LBFGS(
+        dist_model.parameters(),
+        lr=0.1,
+        max_iter=max_iter_,
+        tolerance_change=tol_,
+        tolerance_grad=tol_,
+        line_search_fn='strong_wolfe'
+    )
+
+    def closure():
+        opt.zero_grad()
+
+        output = dist_model(data, data_cat)
+        c = 1
+        print(output)
+        loss = loss_fn(output, 1.*y.reshape(-1, 1))
+
+        if loss.requires_grad:
+            loss.backward()
+        return loss
+
+    opt.step(closure)
+    _cleanup()
 
 
 class TorchBasedLinearEstimator:
@@ -144,6 +220,7 @@ class TorchBasedLinearEstimator:
 
         opt.step(closure)
 
+
     def _loss_fn(self, y_true: torch.Tensor, y_pred: torch.Tensor, weights: Optional[torch.Tensor], c: float) -> torch.Tensor:
         """Weighted loss_fn wrapper.
 
@@ -165,112 +242,76 @@ class TorchBasedLinearEstimator:
         if weights is not None:
             n = weights.sum()
 
-        all_params = torch.cat([y.view(-1) for (x, y) in self.model.named_parameters() if x != 'bias'])
+        all_params = torch.cat([y.view(-1) for (x, y) in model.named_parameters() if x != 'bias'])
 
         penalty = torch.norm(all_params, 2).pow(2) / 2 / n
 
         return loss + .5 * penalty / c
 
-    def fit_predict(self, data: dask_cudf.DataFrame,
+    def fit(self, data: dask_cudf.DataFrame,
                     y: dask_cudf.DataFrame,
+                    c: int = 1,
                     weights: Optional[cp.ndarray] = None,
                     data_val: Optional[dask_cudf.DataFrame] = None,
                     y_val: Optional[dask_cudf.DataFrame] = None,
                     weights_val: Optional[cp.ndarray] = None):
-        def _train_distributed():
-            pass
+        # TODO: implement class fit
+        return self.fit_predict(data, y, c,weights, data_val, y_val, weights_val)
 
-    def fit(self, data: cp.ndarray, y: cp.ndarray, weights: Optional[np.ndarray] = None,
-            data_val: Optional[np.ndarray] = None, y_val: Optional[np.ndarray] = None, weights_val: Optional[np.ndarray] = None):
-        """Fit method.
+    def fit_predict(self, data: dask_cudf.DataFrame,
+                    y: dask_cudf.DataFrame,
+                    c: int = 1,
+                    weights: Optional[cp.ndarray] = None,
+                    data_val: Optional[dask_cudf.DataFrame] = None,
+                    y_val: Optional[dask_cudf.DataFrame] = None,
+                    weights_val: Optional[cp.ndarray] = None):
 
-        Args:
-            data: Data to train.
-            y: Train target values.
-            weights: Train items weights.
-            data_val: Data to validate.
-            y_val: Valid target values.
-            weights_val: Validation item weights.
+        cat_idx = self.categorical_idx
 
-        Returns:
-            self.
-
-        """
         assert self.model is not None, 'Model should be defined'
-        data, data_cat = self._prepare_data(data)
-        if len(y.shape) == 1:
-            y = y[:, cp.newaxis]
-        y = torch.as_tensor(y.astype(cp.float32), device='cuda')
-        if weights is not None:
-            weights = torch.as_tensor(weights.astype(cp.float32), device='cuda')
 
-        if data_val is None and y_val is None:
-            logger.warning('Validation data should be defined. No validation will be performed and C = 1 will be used')
-            self._optimize(data, data_cat, y, weights, 1.)
+        model = deepcopy(self.model)
+        #loss = self._loss_fn
+        max_iter = self.max_iter
+        tol = self.tol
+        world_size = 1
+        if True or (data_val is None and y_val is None):
+            # logger.warning('Validation data should be defined. No validation will be performed and C = 1 will be used')
+            mp.spawn(_train_distributed,
+                     args=(world_size, data, y, model, max_iter, tol, weights, cat_idx))
 
             return self
 
-        data_val, data_val_cat = self._prepare_data(data_val)
+        #data_val, data_val_cat = self._prepare_data(data_val)
 
-        best_score = -np.inf
-        best_model = None
-        es = 0
+        #best_score = -np.inf
+        #best_model = None
+        #es = 0
 
-        for c in self.cs:
-            self._optimize(data, data_cat, y, weights, c)
+        #for c in self.cs:
+        #    self._optimize(data, data_cat, y, weights, c)
 
-            val_pred = self._score(data_val, data_val_cat)
+        #    val_pred = self._score(data_val, data_val_cat)
 
-            score = self.metric(y_val, val_pred[:,0], weights_val)
-            from cuml.metrics import roc_auc_score
-            # print(type(y_val.mean()), val_pred.mean(), roc_auc_score(y_val.astype(cp.float64), val_pred.astype(cp.float64)))
-            # print("Score is:", score)
-            logger.info('Linear model: C = {0} score = {1}'.format(c, score))
-            if score > best_score:
-                best_score = score
-                best_model = deepcopy(self.model)
-                es = 0
-            else:
-                es += 1
-            print("BEST MODEL:", best_model)
-            if es >= self.early_stopping:
-                break
-        if best_model is not None:
-            print("saving best model...")
-            self.model = best_model
+        #    score = self.metric(y_val, val_pred[:, 0], weights_val)
+        #    from cuml.metrics import roc_auc_score
+        #    # print(type(y_val.mean()), val_pred.mean(), roc_auc_score(y_val.astype(cp.float64), val_pred.astype(cp.float64)))
+        #    # print("Score is:", score)
+        #    logger.info('Linear model: C = {0} score = {1}'.format(c, score))
+        #    if score > best_score:
+        #        best_score = score
+        #        best_model = deepcopy(self.model)
+        #        es = 0
+        #    else:
+        #        es += 1
+        #    print("BEST MODEL:", best_model)
+        #    if es >= self.early_stopping:
+        #        break
+        #if best_model is not None:
+        #    print("saving best model...")
+        #    self.model = best_model
 
-        return self
-
-    def _score(self, data: cp.ndarray, data_cat: Optional[cp.ndarray]) -> cp.ndarray:
-        """Get predicts to evaluate performance of model.
-
-        Args:
-            data: Numeric data.
-            data_cat: Categorical data.
-
-        Returns:
-            Predicted target values.
-
-        """
-        with torch.set_grad_enabled(False):
-            self.model.eval()
-            preds = cp.asarray(self.model(data, data_cat))
-
-        return preds
-
-    def predict(self, data: cp.ndarray) -> cp.ndarray:
-        """Inference phase.
-
-        Args:
-            data: Data to test.
-
-        Returns:
-            Predicted target values.
-
-        """
-        data, data_cat = self._prepare_data(data)
-
-        return self._score(data, data_cat)
+        #return self
 
 
 class TorchBasedLogisticRegression(TorchBasedLinearEstimator):
@@ -318,6 +359,8 @@ class TorchBasedLogisticRegression(TorchBasedLinearEstimator):
             predicted target values.
 
         """
+        # TODO: make an implementation of predict
+        return None
         pred = super().predict(data)
         if self._binary:
             pred = pred[:, 0]
