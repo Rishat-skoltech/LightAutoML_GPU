@@ -4,13 +4,17 @@ from functools import partial
 from typing import Callable, Union, Optional, Dict, Any
 
 import torch
-from log_calls import record_history
 from torch import nn
 
-from .base import Loss
+from ..utils import infer_gib
+from ..utils_gpu import infer_gib_gpu
+
+from ..common_metric import _valid_str_metric_names
+from ..common_metric_gpu import _valid_str_metric_names_gpu
+
+from .base import Loss, MetricFunc
 
 
-@record_history(enabled=False)
 class TorchLossWrapper(nn.Module):
     """Customize PyTorch-based loss.
 
@@ -48,7 +52,6 @@ class TorchLossWrapper(nn.Module):
         return outp.mean()
 
 
-@record_history(enabled=False)
 def torch_rmsle(y_true: torch.Tensor, y_pred: torch.Tensor, sample_weight: Optional[torch.Tensor] = None):
     """Computes Root Mean Squared Logarithmic Error.
 
@@ -75,7 +78,6 @@ def torch_rmsle(y_true: torch.Tensor, y_pred: torch.Tensor, sample_weight: Optio
     return outp.mean()
 
 
-@record_history(enabled=False)
 def torch_quantile(y_true: torch.Tensor, y_pred: torch.Tensor, sample_weight: Optional[torch.Tensor] = None,
                    q: float = 0.9):
     """Computes Mean Quantile Error.
@@ -105,7 +107,6 @@ def torch_quantile(y_true: torch.Tensor, y_pred: torch.Tensor, sample_weight: Op
     return err.mean()
 
 
-@record_history(enabled=False)
 def torch_fair(y_true: torch.Tensor, y_pred: torch.Tensor, sample_weight: Optional[torch.Tensor] = None,
                c: float = 0.9):
     """Computes Mean Fair Error.
@@ -133,7 +134,6 @@ def torch_fair(y_true: torch.Tensor, y_pred: torch.Tensor, sample_weight: Option
     return err.mean()
 
 
-@record_history(enabled=False)
 def torch_huber(y_true: torch.Tensor, y_pred: torch.Tensor, sample_weight: Optional[torch.Tensor] = None,
                 a: float = 0.9):
     """Computes Mean Huber Error.
@@ -162,7 +162,6 @@ def torch_huber(y_true: torch.Tensor, y_pred: torch.Tensor, sample_weight: Optio
     return err.mean()
 
 
-@record_history(enabled=False)
 def torch_f1(y_true: torch.Tensor, y_pred: torch.Tensor, sample_weight: Optional[torch.Tensor] = None):
     """Computes F1 macro.
 
@@ -197,7 +196,6 @@ def torch_f1(y_true: torch.Tensor, y_pred: torch.Tensor, sample_weight: Optional
     return - f1.mean()
 
 
-@record_history(enabled=False)
 def torch_mape(y_true: torch.Tensor, y_pred: torch.Tensor, sample_weight: Optional[torch.Tensor] = None):
     """Computes Mean Absolute Percentage Error.
 
@@ -240,11 +238,10 @@ _torch_loss_dict = {
 }
 
 
-@record_history(enabled=False)
 class TORCHLoss(Loss):
     """Loss used for PyTorch."""
 
-    def __init__(self, loss: Union[str, Callable], loss_params: Optional[Dict] = None):
+    def __init__(self, loss: Union[str, Callable], loss_params: Optional[Dict] = None, device: Optional[str] = 'cpu'):
         """
 
         Args:
@@ -252,6 +249,8 @@ class TORCHLoss(Loss):
             loss_params: additional loss parameters.
 
         """
+        assert device in ['cpu', 'gpu', 'mgpu'], 'Device must be either CPU or GPU!'
+        self.device = device
         self.loss_params = {}
         if loss_params is not None:
             self.loss_params = loss_params
@@ -262,3 +261,68 @@ class TORCHLoss(Loss):
             self.loss = partial(_torch_loss_dict[loss][0], **self.loss_params)
         else:
             self.loss = partial(loss, **self.loss_params)
+            
+    def metric_wrapper(self, metric_func: Callable, greater_is_better: Optional[bool],
+                       metric_params: Optional[Dict] = None) -> Callable:
+        """Customize metric.
+
+        Args:
+            metric_func: Callable metric.
+            greater_is_better: Whether or not higher value is better.
+            metric_params: Additional metric parameters.
+
+        Returns:
+            Callable metric.
+
+        """
+        if greater_is_better is None:
+            if self.device == 'cpu':
+                greater_is_better = infer_gib(metric_func)
+            else:
+                greater_is_better = infer_gib_gpu(metric_func)
+            
+
+        m = 2 * float(greater_is_better) - 1
+
+        if metric_params is not None:
+            metric_func = partial(metric_func, **metric_params)
+
+        return MetricFunc(metric_func, m, self._bw_func)
+
+    def set_callback_metric(self, metric: Union[str, Callable], greater_is_better: Optional[bool] = None,
+                            metric_params: Optional[Dict] = None, task_name: Optional[Dict] = None):
+        """Callback metric setter.
+
+        Args:
+            metric: Callback metric
+            greater_is_better: Whether or not higher value is better.
+            metric_params: Additional metric parameters.
+            task_name: Name of task.
+
+        Note:
+            Value of ``task_name`` should be one of following options:
+
+            -  `'binary'`
+            - `'reg'`
+            - `'multiclass'`
+
+        """
+
+        assert task_name in ['binary', 'reg', 'multiclass'], 'Incorrect task name: {}'.format(task_name)
+        self.metric = metric
+
+        if metric_params is None:
+            metric_params = {}
+
+        if type(metric) is str:
+            if self.device == 'cpu':
+                metric_dict = _valid_str_metric_names[task_name]
+            else:
+                metric_dict = _valid_str_metric_names_gpu[task_name]
+            self.metric_func = self.metric_wrapper(metric_dict[metric], greater_is_better, metric_params)
+
+            self.metric_name = metric
+        else:
+            # TODO: create check for gpu-compatibility
+            self.metric_func = self.metric_wrapper(metric, greater_is_better, metric_params)
+            self.metric_name = None

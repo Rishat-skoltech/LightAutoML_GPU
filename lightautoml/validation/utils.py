@@ -2,17 +2,20 @@
 
 from typing import Optional, Callable, cast, Union
 
-from log_calls import record_history
-
 from .base import DummyIterator, HoldoutIterator, TrainValidIterator
+
 from .np_iterators import get_numpy_iterator
+from .gpu_iterators import get_gpu_iterator
+
 from ..dataset.base import LAMLDataset
+
 from ..dataset.np_pd_dataset import CSRSparseDataset, NumpyDataset, PandasDataset
+from ..dataset.cp_cudf_dataset import CupyDataset, CudfDataset
+from ..dataset.daskcudf_dataset import DaskCudfDataset
 
 NpDataset = Union[CSRSparseDataset, NumpyDataset, PandasDataset]
+GpuDataset = Union[CupyDataset, CudfDataset, DaskCudfDataset]
 
-
-@record_history(enabled=False)
 def create_validation_iterator(train: LAMLDataset, valid: Optional[LAMLDataset] = None,
                                n_folds: Optional[int] = None, cv_iter: Optional[Callable] = None) -> TrainValidIterator:
     """Creates train-validation iterator.
@@ -41,7 +44,10 @@ def create_validation_iterator(train: LAMLDataset, valid: Optional[LAMLDataset] 
         train = cast(NpDataset, train)
         valid = cast(NpDataset, valid)
         iterator = get_numpy_iterator(train, valid, n_folds, cv_iter)
-
+    elif type(train) in [CupyDataset, CudfDataset, DaskCudfDataset]:
+        train = cast(GpuDataset, train)
+        valid = cast(GpuDataset, valid)
+        iterator = get_gpu_iterator(train, valid, n_folds, cv_iter)
     else:
         if valid is not None:
             iterator = HoldoutIterator(train, valid)

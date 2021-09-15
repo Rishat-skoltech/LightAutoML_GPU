@@ -3,8 +3,8 @@
 from itertools import combinations
 from typing import Optional, Union, List, Sequence, cast
 
+
 import numpy as np
-from log_calls import record_history
 from pandas import Series, DataFrame
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.utils.murmurhash import murmurhash3_32
@@ -19,7 +19,6 @@ NumpyOrPandas = Union[NumpyDataset, PandasDataset]
 NumpyOrSparse = Union[NumpyDataset, CSRSparseDataset]
 
 
-@record_history(enabled=False)
 def categorical_check(dataset: LAMLDataset):
     """Check if all passed vars are categories.
 
@@ -35,7 +34,6 @@ def categorical_check(dataset: LAMLDataset):
         assert roles[f].name == 'Category', 'Only categories accepted in this transformer'
 
 
-@record_history(enabled=False)
 def oof_task_check(dataset: LAMLDataset):
     """Check if all passed vars are categories.
 
@@ -47,7 +45,6 @@ def oof_task_check(dataset: LAMLDataset):
     assert task.name in ['binary', 'reg'], 'Only binary and regression tasks supported in this transformer'
 
 
-@record_history(enabled=False)
 def multiclass_task_check(dataset: LAMLDataset):
     """Check if all passed vars are categories.
 
@@ -61,7 +58,6 @@ def multiclass_task_check(dataset: LAMLDataset):
     assert task.name in ['multiclass'], 'Only multiclass tasks supported in this transformer'
 
 
-@record_history(enabled=False)
 def encoding_check(dataset: LAMLDataset):
     """Check if all passed vars are categories.
 
@@ -77,7 +73,6 @@ def encoding_check(dataset: LAMLDataset):
             f, roles[f])
 
 
-@record_history(enabled=False)
 class LabelEncoder(LAMLTransformer):
     """Simple LabelEncoder in order of frequency.
 
@@ -149,9 +144,8 @@ class LabelEncoder(LAMLTransformer):
             co = role.unknown
             cnts = subs[i].value_counts(dropna=False).reset_index() \
                 .sort_values([i, 'index'], ascending=[False, True]).set_index('index')
-            vals = cnts[cnts > co].index.values
+            vals = cnts[(cnts > co).values].index.values
             self.dicts[i] = Series(np.arange(vals.shape[0], dtype=np.int32) + 1, index=vals)
-
         return self
 
     def transform(self, dataset: NumpyOrPandas) -> NumpyDataset:
@@ -183,11 +177,9 @@ class LabelEncoder(LAMLTransformer):
         # create resulted
         output = dataset.empty().to_numpy()
         output.set_data(new_arr, self.features, self._output_role)
-
         return output
 
 
-@record_history(enabled=False)
 class OHEEncoder(LAMLTransformer):
     """
     Simple OneHotEncoder over label encoded categories.
@@ -291,7 +283,6 @@ class OHEEncoder(LAMLTransformer):
         return output
 
 
-@record_history(enabled=False)
 class FreqEncoder(LabelEncoder):
     """
     Labels are encoded with frequency in train data.
@@ -333,11 +324,10 @@ class FreqEncoder(LabelEncoder):
             # TODO: think what to do with this warning
             cnts = df[i].value_counts(dropna=False)
             self.dicts[i] = cnts[cnts > 1]
-
+        #print(self.dicts)
         return self
 
 
-@record_history(enabled=False)
 class TargetEncoder(LAMLTransformer):
     """
     Out-of-fold target encoding.
@@ -501,7 +491,6 @@ class TargetEncoder(LAMLTransformer):
         return output
 
 
-@record_history(enabled=False)
 class MultiClassTargetEncoder(LAMLTransformer):
     """
     Out-of-fold target encoding for multiclass task.
@@ -622,7 +611,7 @@ class MultiClassTargetEncoder(LAMLTransformer):
 
         output = dataset.empty()
         output.set_data(oof_feats.reshape((data.shape[0], -1)), self.features, NumericRole(np.float32, prob=True))
-
+        #print(oof_feats.reshape((data.shape[0],-1)))
         return output
 
     def transform(self, dataset: NumpyOrPandas) -> NumpyOrSparse:
@@ -655,7 +644,6 @@ class MultiClassTargetEncoder(LAMLTransformer):
         return output
 
 
-@record_history(enabled=False)
 class CatIntersectstions(LabelEncoder):
     """Build label encoded intertsections of categorical variables."""
 
@@ -756,7 +744,6 @@ class CatIntersectstions(LabelEncoder):
         return super().transform(inter_dataset)
 
 
-@record_history(enabled=False)
 class OrdinalEncoder(LabelEncoder):
     """
     Encoding ordinal categories into numbers.
@@ -804,5 +791,4 @@ class OrdinalEncoder(LabelEncoder):
                 cnts = Series(cnts['index'].astype(str).rank().values, index=cnts['index'].values)
                 cnts = cnts.append(Series([cnts.shape[0] + 1], index=[np.nan]))
                 self.dicts[i] = cnts
-
         return self

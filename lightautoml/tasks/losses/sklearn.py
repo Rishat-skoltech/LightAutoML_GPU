@@ -3,7 +3,6 @@
 from typing import Callable, Optional, Dict, Union
 
 import numpy as np
-from log_calls import record_history
 
 from .base import Loss
 from ...utils.logging import get_logger
@@ -11,7 +10,6 @@ from ...utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-@record_history(enabled=False)
 def fw_rmsle(x, y): return np.log1p(x), y
 
 
@@ -28,12 +26,11 @@ _sk_force_metric = {
 }
 
 
-@record_history(enabled=False)
 class SKLoss(Loss):
     """Loss used for scikit-learn."""
 
     def __init__(self, loss: str, loss_params: Optional[Dict] = None, fw_func: Optional[Callable] = None,
-                 bw_func: Optional[Callable] = None):
+                 bw_func: Optional[Callable] = None, device: Optional[str] = 'cpu'):
         """
 
         Args:
@@ -46,6 +43,7 @@ class SKLoss(Loss):
               Used for predict values transformation.
 
         """
+
         assert loss in ['logloss', 'mse', 'crossentropy', 'rmsle'], 'Not supported in sklearn in general case.'
         self.flg_regressor = loss in ['mse', 'rmsle']
 

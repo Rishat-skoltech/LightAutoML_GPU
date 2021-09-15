@@ -4,6 +4,8 @@ from typing import Union
 
 import numpy as np
 import cupy as cp
+import dask.array as da
+import dask.dataframe as dd
 import cudf
 
 from .base import LAMLTransformer
@@ -89,13 +91,12 @@ class NaNFlags_gpu(LAMLTransformer):
 
         """
         # convert to accepted dtype and get attributes
-        dataset = dataset.to_cupy()
         nans = dataset[:, self.nan_cols].data
 
         # transform
-        new_arr = cp.isnan(nans).astype(cp.float32)
+        new_arr = nans.isna().astype(cp.float32)
         # create resulted
-        output = dataset.empty().to_cupy()
+        output = dataset.empty()
         output.set_data(new_arr, self.features, NumericRole(np.float32))
 
         return output
@@ -166,7 +167,7 @@ class FillnaMedian_gpu(LAMLTransformer):
     _fit_checks = (numeric_check,)
     _transform_checks = ()
     _fname_prefix = 'fillnamed'
-
+    
     def fit_daskcudf(self, dataset: DaskCudfDataset):
         """Estimate medians.
 
@@ -177,8 +178,10 @@ class FillnaMedian_gpu(LAMLTransformer):
             self.
 
         """
-        self.meds = dataset.data.dropna().quantile().compute().astype(np.float32)
-        self.meds.fillna(0.0)
+        data = dataset.data.astype(cp.float32).to_dask_array(lengths=True)
+        self.meds = da.median(data, axis=0).compute()
+        self.meds[cp.isnan(self.meds)] = 0
+        self.meds = cudf.Series(self.meds, index=dataset.data.columns).astype(cp.float32)
 
         return self
 
@@ -214,10 +217,10 @@ class FillnaMedian_gpu(LAMLTransformer):
 
         """
         data = dataset.data
-        new_data = data.fillna(self.meds)
+        new_data = data.fillna(self.meds).astype(np.float32)
 
         output = dataset.empty()
-        output.set_data(new_data, self.features, CategoryRole(np.float32))
+        output.set_data(new_data, self.features, NumericRole(np.float32))
         return output
 
     def transform_cupy(self, dataset: CupyTransformable) -> CupyDataset:
@@ -231,18 +234,16 @@ class FillnaMedian_gpu(LAMLTransformer):
 
         """
         # convert to accepted dtype and get attributes
-        dataset = dataset.to_cupy()
         data = dataset.data
         # transform
-        data = cp.where(cp.isnan(data), self.meds, data)
-
+        new_data = cp.where(cp.isnan(data.values), self.meds, data.values)
+        new_data = cudf.DataFrame(new_data, index=data.index, columns=self.features)
         # create resulted
-        output = dataset.empty().to_cupy()
+        output = dataset.empty()
 
         #TODO
         # CHECK IF np.float32 OK OR USE cp.float32 INSTEAD
-
-        output.set_data(data, self.features, NumericRole(np.float32))
+        output.set_data(new_data, self.features, NumericRole(np.float32))
 
         return output
 
@@ -303,7 +304,7 @@ class FillInf_gpu(LAMLTransformer):
         output = cp.where(cp.isinf(data.values), cp.nan, data.values)
 
         #if data is single columns should be Series probably
-        return cudf.DataFrame(output, columns=data.columns, index=data.index)
+        return cudf.DataFrame(output, columns=self.features, index=data.index)
 
     def transform_daskcudf(self, dataset: DaskCudfDataset) -> DaskCudfDataset:
         """Replace inf to nan.
@@ -315,7 +316,7 @@ class FillInf_gpu(LAMLTransformer):
             DaskCudf dataset with encoded labels.
 
         """
-        new_data = dataset.data.map_partitions(self.inf_to_nan, meta=dataset.data)
+        new_data = dataset.data.map_partitions(self.inf_to_nan, meta=cudf.DataFrame(columns=self.features))
 
         output = dataset.empty()
 
@@ -338,11 +339,10 @@ class FillInf_gpu(LAMLTransformer):
         new_data = self.inf_to_nan(data)
 
         # create resulted
-        output = dataset.empty()#.to_cupy()
+        output = dataset.empty()
 
         #TODO
         # CHECK IF np.float32 OK OR USE cp.float32 INSTEAD
-
         output.set_data(new_data, self.features, NumericRole(np.float32))
 
         return output
@@ -379,7 +379,7 @@ class LogOdds_gpu(LAMLTransformer):
         output = cp.clip(data.values, 1e-7, 1-1e-7)
         output = cp.log(output / (1 - output))
 
-        return cudf.DataFrame(output, columns=data.columns, index=data.index)
+        return cudf.DataFrame(output, columns=self.features, index=data.index)
 
     def transform_cupy(self, dataset: CupyTransformable) -> CupyDataset:
         """Transform - convert num values to logodds.
@@ -400,7 +400,6 @@ class LogOdds_gpu(LAMLTransformer):
 
         # TODO: CHECK IF np.float32 OK OR USE cp.float32 INSTEAD
         output.set_data(data, self.features, NumericRole(np.float32))
-
         return output
 
     def transform_daskcudf(self, dataset: DaskCudfDataset) -> DaskCudfDataset:
@@ -413,11 +412,10 @@ class LogOdds_gpu(LAMLTransformer):
             DaskCudf dataset with encoded labels.
 
         """
-        new_data = dataset.data.map_partitions(self.num_to_logodds, meta=dataset.data)
+        new_data = dataset.data.map_partitions(self.num_to_logodds, meta=cudf.DataFrame(columns=self.features))
 
         output = dataset.empty()
         output.set_data(new_data, self.features, NumericRole(np.float32))
-
         return output
 
     def transform(self, dataset: GpuDataset) -> GpuDataset:
@@ -485,7 +483,7 @@ class StandardScaler_gpu(LAMLTransformer):
 
     def standardize(self, data):
         output = (data.values - self.means ) / self.stds
-        return cudf.DataFrame(output, columns=data.columns, index=data.index)
+        return cudf.DataFrame(output, columns=self.features, index=data.index)
 
     def transform_daskcudf(self, dataset: DaskCudfDataset) -> DaskCudfDataset:
         """Scale test data.
@@ -497,10 +495,9 @@ class StandardScaler_gpu(LAMLTransformer):
             DaskCudf dataset with encoded labels.
 
         """
-        new_data = dataset.data.map_partitions(self.standardize, meta=dataset.data)
+        new_data = dataset.data.map_partitions(self.standardize, meta=cudf.DataFrame(columns=self.features))
         output = dataset.empty()
         output.set_data(new_data, self.features, NumericRole(np.float32))
-
         return output
 
     def transform_cupy(self, dataset: CupyTransformable) -> CupyDataset:
@@ -514,18 +511,16 @@ class StandardScaler_gpu(LAMLTransformer):
 
         """
         # convert to accepted dtype and get attributes
-        dataset = dataset.to_cupy()
         data = dataset.data
 
         # transform
-        data = (data - self.means) / self.stds
-
+        new_data = (data.values - self.means) / self.stds
+        new_data = cudf.DataFrame(new_data, index=data.index, columns=self.features)
         # create resulted
-        output = dataset.empty().to_cupy()
+        output = dataset.empty()
 
         # TODO: CHECK IF np.float32 OK OR USE cp.float32 INSTEAD
         output.set_data(data, self.features, NumericRole(np.float32))
-
         return output
 
     def fit(self, dataset: GpuDataset):
@@ -607,65 +602,6 @@ class QuantileBinning_gpu(LAMLTransformer):
         else:
             return self.fit_cupy(dataset)
 
-    def fit_daskcudf(self, dataset: DaskCudfDataset):
-        """Estimate bins borders.
-
-        Args:
-            dataset: DaskCudf dataset of numeric features.
-
-        Returns:
-            self.
-
-        """
-        cudf_data = dataset.data
-        grid = np.linspace(0, 1, self.nbins + 1)[1:-1]
-        bins = cudf_data.dropna().quantile(grid).persist()
-        self.bins = [bins[x].unique().astype(np.float32) for x in bins.columns]
-        return self
-
-    def transform(self, dataset: GpuDataset) -> GpuDataset:
-        """Apply bin borders.
-
-        Args:
-            dataset: Pandas/Cudf or Numpy/Cupy or DaskCudf dataset of numeric features.
-
-        Returns:
-            Respective dataset with encoded labels.
-
-        """
-        assert isinstance(dataset , GpuDataset.__args__),\
-               'QuantileBinning_gpu works only with CupyDataset, CudfDataset, DaskCudfDataset'
-
-        super().transform(dataset)
-
-        if isinstance(dataset, DaskCudfDataset):
-            return self.transform_daskcudf(dataset)
-        else:
-            return self.transform_cupy(dataset)
-
-    def transform_daskcudf(self, dataset: DaskCudfDataset) -> DaskCudfDataset:
-        """Apply bin borders.
-
-        Args:
-            dataset: DaskCudf dataset of numeric features.
-
-        Returns:
-            DaskCudf dataset with encoded labels.
-
-        """
-        def digitize_dask(data, bins):
-            output = cudf.DataFrame(columns = data.columns, index = data.index)
-            sl = data.isna()
-            for i,col in enumerate(data.columns):
-                output[col] = data[col].digitize(bins[i]).values#+1
-                output[col][sl[col]] = 0
-            return output
-        new_data = dataset.data.map_partitions(digitize_dask, self.bins,
-                                              meta=dataset.data.astype(np.int32)).persist()
-        output = dataset.empty()
-        output.set_data(new_data, self.features, CategoryRole(np.int32, label_encoded=True))
-        return output
-
     def fit_cupy(self, dataset: CupyTransformable):
         """Estimate bins borders.
 
@@ -690,6 +626,45 @@ class QuantileBinning_gpu(LAMLTransformer):
             self.bins.append(q)
         return self
 
+    def fit_daskcudf(self, dataset: DaskCudfDataset):
+        """Estimate bins borders.
+
+        Args:
+            dataset: DaskCudf dataset of numeric features.
+
+        Returns:
+            self.
+
+        """
+        data = dataset.data
+        grid = np.linspace(0, 1, self.nbins + 1)[1:-1]
+        self.bins = []
+        for col in data.columns:
+            q = data[col].dropna().quantile(grid)
+            q = q.unique().astype(np.float32)
+            self.bins.append(q.compute())
+        return self
+
+    def transform(self, dataset: GpuDataset) -> GpuDataset:
+        """Apply bin borders.
+
+        Args:
+            dataset: Pandas/Cudf or Numpy/Cupy or DaskCudf dataset of numeric features.
+
+        Returns:
+            Respective dataset with encoded labels.
+
+        """
+        assert isinstance(dataset , GpuDataset.__args__),\
+               'QuantileBinning_gpu works only with CupyDataset, CudfDataset, DaskCudfDataset'
+
+        super().transform(dataset)
+
+        if isinstance(dataset, DaskCudfDataset):
+            return self.transform_daskcudf(dataset)
+        else:
+            return self.transform_cupy(dataset)
+
     def transform_cupy(self, dataset: CupyTransformable) -> CupyDataset:
         """Apply bin borders.
 
@@ -701,8 +676,7 @@ class QuantileBinning_gpu(LAMLTransformer):
 
         """
         # convert to accepted dtype and get attributes
-        dataset = dataset.to_cupy()
-        data = dataset.data
+        data = dataset.data.values
 
         # transform
         sl = cp.isnan(data)
@@ -714,9 +688,32 @@ class QuantileBinning_gpu(LAMLTransformer):
 
         new_data = cp.where(sl, 0, new_data)
         # create resulted
-        output = dataset.empty().to_cupy()
-
+        output = dataset.empty()
+        new_data = cudf.DataFrame(new_data, index=dataset.data.index, columns=self.features)
         output.set_data(new_data, self.features, CategoryRole(np.int32, label_encoded=True))
+        return output
 
+    def digitize(self, data):
+        output = cudf.DataFrame(columns = self.features, index = data.index)
+        sl = data.isna()
+        for i,col in enumerate(data.columns):
+            output[output.columns[i]] = data[col].digitize(self.bins[i]).values#+1
+            output[output.columns[i]][sl[col]] = 0
+        return output
+
+    def transform_daskcudf(self, dataset: DaskCudfDataset) -> DaskCudfDataset:
+        """Apply bin borders.
+
+        Args:
+            dataset: DaskCudf dataset of numeric features.
+
+        Returns:
+            DaskCudf dataset with encoded labels.
+
+        """
+        new_data = dataset.data.map_partitions(self.digitize,
+                                              meta=cudf.DataFrame(columns=self.features).astype(np.int32)).persist()
+        output = dataset.empty()
+        output.set_data(new_data, self.features, CategoryRole(np.int32, label_encoded=True))
         return output
 

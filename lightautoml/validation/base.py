@@ -3,7 +3,6 @@
 from copy import copy
 from typing import Any, Generator, Iterable, List, Optional, Sequence, Tuple, TypeVar, cast
 
-from log_calls import record_history
 
 from lightautoml.dataset.base import LAMLDataset
 from lightautoml.pipelines.features.base import FeaturesPipeline
@@ -18,7 +17,6 @@ CustomIdxs = Iterable[Tuple[Sequence, Sequence]]
 
 # add checks here
 # check for same columns in dataset
-@record_history(enabled=False)
 class TrainValidIterator:
     """Abstract class to train/validation iteration.
 
@@ -101,7 +99,6 @@ class TrainValidIterator:
         raise NotImplementedError
 
 
-@record_history(enabled=False)
 class DummyIterator(TrainValidIterator):
     """Simple Iterator which use train data as validation."""
 
@@ -151,7 +148,6 @@ class DummyIterator(TrainValidIterator):
         return HoldoutIterator(self.train, self.train)
 
 
-@record_history(enabled=False)
 class HoldoutIterator(TrainValidIterator):
     """Iterator for classic holdout - just predefined train and valid samples."""
 
@@ -205,7 +201,6 @@ class HoldoutIterator(TrainValidIterator):
         """
         train_valid = cast('HoldoutIterator', super().apply_feature_pipeline(features_pipeline))
         train_valid.valid = features_pipeline.transform(train_valid.valid)
-
         return train_valid
 
     def apply_selector(self, selector) -> 'HoldoutIterator':
@@ -233,7 +228,6 @@ class HoldoutIterator(TrainValidIterator):
         return self
 
 
-@record_history(enabled=False)
 class CustomIterator(TrainValidIterator):
     """Iterator that uses function to create folds indexes.
 

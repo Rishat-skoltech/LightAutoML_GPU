@@ -1,13 +1,16 @@
 """Cudf reader."""
 
-from typing import Any, Union, Dict, Sequence, TypeVar, Optional
+from typing import Any, Union, Dict, Sequence, TypeVar, Optional, cast
 from copy import deepcopy
 
 import numpy as np
+from time import perf_counter
 
 import cupy as cp
+import dask_cudf
 import pandas as pd
 import cudf
+from ..tasks import Task
 
 from cudf.core.dataframe import DataFrame
 from cudf.core.series import Series
@@ -56,24 +59,17 @@ class CudfReader(PandasToPandasReader):
         - Optional: advanced guessing of role and handling types.
 
     """
-
-    def fit_read(self, train_data: DataFrame, features_names: Any = None,
-                 roles: UserDefinedRolesDict = None,
-                 **kwargs: Any) -> CudfDataset:
-        """Get dataset with initial feature selection.
+    def __init__(self, task: Task, device_num: int = 0, *args: Any, **kwargs: Any):
+        """
 
         Args:
-            train_data: Input data.
-            features_names: Ignored. Just to keep signature.
-            roles: Dict of features roles in format
-              ``{RoleX: ['feat0', 'feat1', ...], RoleY: 'TARGET', ....}``.
-            **kwargs: Can be used for target/group/weights.
-
-        Returns:
-            Dataset with selected features.
+            device_num: ID of GPU
 
         """
-        logger.info('Train data shape: {}'.format(train_data.shape))
+        super().__init__(task, *args, **kwargs)
+        self.device_num = device_num
+
+    def _prepare_roles_and_kwargs(self, roles, train_data, roles_parsed: bool = False, **kwargs):
 
         if roles is None:
             roles = {}
@@ -81,7 +77,7 @@ class CudfReader(PandasToPandasReader):
         #       {RoleX: ['feat0', 'feat1', ...], RoleY: 'TARGET', ...}
         # to automl format
         #       {'feat0': RoleX, 'feat1': RoleX, 'TARGET': RoleY, ...}
-        parsed_roles = roles_parser(roles)
+        parsed_roles = roles if roles_parsed else roles_parser(roles)
         # transform str role definition to automl ColumnRole
         attrs_dict = dict(zip(array_attr_roles, valid_array_attributes))
 
@@ -103,7 +99,56 @@ class CudfReader(PandasToPandasReader):
         assert 'target' in kwargs, 'Target should be defined'
         self.target = kwargs['target'].name
 
+        return parsed_roles, kwargs
+
+    def _prepare_data_and_target(self, train_data, **kwargs):
+
+        output_data = None
+        #if isinstance(train_data, (pd.DataFrame, pd.Series)):
+        if type(train_data) == pd.DataFrame or type(train_data) == pd.Series:
+            #st = perf_counter()
+            cp.cuda.runtime.setDevice(self.device_num)
+            #print(cp.cuda.runtime.getDevice(), "device", perf_counter() - st, " time")
+            #st = perf_counter()
+            output_data = cudf.from_pandas(train_data, nan_as_null=False)
+            kwargs['target'] = output_data[self.target]
+            #print(perf_counter() - st, "data copying")
+        elif type(train_data) == cudf.DataFrame or type(train_data) == cudf.Series:
+        #elif isinstance(train_data, (cudf.DataFrame, cudf.Series)):
+            output_data = train_data
+        elif type(train_data) == dask_cudf.DataFrame or type(train_data) == dask_cudf.Series:
+        #elif isinstance(train_data, (dask_cudf.DataFrame, dask_cudf.Series)):
+            cp.cuda.runtime.setDevice(self.device_num)
+            output_data = train_data.compute()
+            kwargs['target'] = output_data[self.target]
+        else:
+            raise NotImplementedError("Input data type is not supported")
+
         kwargs['target'] = self._create_target(kwargs['target'])
+
+        return output_data, kwargs
+
+    def fit_read(self, train_data: DataFrame, features_names: Any = None,
+                 roles: UserDefinedRolesDict = None, roles_parsed: bool = False,
+                 **kwargs: Any) -> CudfDataset:
+        """Get dataset with initial feature selection.
+
+        Args:
+            train_data: Input data.
+            features_names: Ignored. Just to keep signature.
+            roles: Dict of features roles in format
+              ``{RoleX: ['feat0', 'feat1', ...], RoleY: 'TARGET', ....}``.
+            **kwargs: Can be used for target/group/weights.
+
+        Returns:
+            Dataset with selected features.
+
+        """
+        #cudf.set_allocator("managed")
+        logger.info('Train data shape: {}'.format(train_data.shape))
+
+        parsed_roles, kwargs = self._prepare_roles_and_kwargs(roles, train_data, roles_parsed = roles_parsed, **kwargs)
+        train_data, kwargs = self._prepare_data_and_target(train_data, **kwargs)
 
         # get subsample if it needed
         subsample = train_data
@@ -236,19 +281,24 @@ class CudfReader(PandasToPandasReader):
         """
         num_dtype = self._get_default_role_from_str('numeric').dtype
         date_format = self._get_default_role_from_str('datetime').format
-        try:
-            _ = feature.dt
-            return DatetimeRole(np.datetime64, date_format=date_format)
-        except AttributeError:
-            pass
-
         # check if feature is number
         try:
             _ = feature.astype(num_dtype)
+            try:
+                _ = feature.dt
+                return DatetimeRole(np.datetime64, date_format = date_format)
+            except AttributeError:
+                pass
             return NumericRole(num_dtype)
         except ValueError:
             pass
         except TypeError:
+            pass
+        
+        try:
+            _ = cast(cudf.Series, cudf.to_datetime(feature, infer_datetime_format=False, format=date_format)).dt
+            return DatetimeRole(np.datetime64, date_format=date_format)
+        except (AttributeError, ValueError):
             pass
 
         return CategoryRole(object)
@@ -311,7 +361,6 @@ class CudfReader(PandasToPandasReader):
         advanced_roles_params = deepcopy(self.advanced_roles_params)
         drop_co = advanced_roles_params.pop('drop_score_co')
         # guess roles nor numerics
-
         stat = get_numeric_roles_stat_gpu(dataset, manual_roles=manual_roles,
                                       random_state=self.random_state,
                                       subsample=self.samples,
@@ -323,7 +372,7 @@ class CudfReader(PandasToPandasReader):
             stat = calc_encoding_rules(stat, **advanced_roles_params)
             new_roles_dict = {**new_roles_dict, **rule_based_roles_guess(stat)}
             top_scores.append(stat['max_score'])
-
+            #print(top_scores)
         # # # guess categories handling type
         stat = get_category_roles_stat_gpu(dataset,
                                      random_state=self.random_state,
@@ -335,15 +384,17 @@ class CudfReader(PandasToPandasReader):
             new_roles_dict = {**new_roles_dict,\
                               **rule_based_cat_handler_guess(stat)}
             top_scores.append(stat['max_score'])
-
+            #print(top_scores)
         # # get top scores of feature
         if len(top_scores) > 0:
             top_scores = pd.concat(top_scores, axis=0)
-
+            #print(top_scores.index)
             null_scores = get_null_scores_gpu(dataset, top_scores.index.values,
                                           random_state=self.random_state,
                                           subsample=self.samples)
             top_scores = pd.concat([null_scores, top_scores], axis=1).max(axis=1)
+            #print(drop_co)
+            #print(top_scores)
             rejected = list(top_scores[top_scores < drop_co].index.values)
             logger.info('Feats was rejected during automatic roles guess: {0}'.format(rejected))
             new_roles_dict = {**new_roles_dict,\

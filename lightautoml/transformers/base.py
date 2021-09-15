@@ -4,7 +4,6 @@ from copy import deepcopy
 from typing import Sequence, Callable, List, ClassVar, Union
 
 import numpy as np
-from log_calls import record_history
 
 from ..dataset.base import LAMLDataset, RolesDict
 from ..dataset.roles import ColumnRole
@@ -15,7 +14,6 @@ from ..dataset.utils import concatenate
 Roles = Union[Sequence[ColumnRole], ColumnRole, RolesDict, None]
 
 
-@record_history(enabled=False)
 class LAMLTransformer:
     """Base class for transformer method (like sklearn, but works with datasets)."""
     _fname_prefix = None
@@ -97,7 +95,6 @@ class LAMLTransformer:
         return self.transform(dataset)
 
 
-@record_history(enabled=False)
 class SequentialTransformer(LAMLTransformer):
     """
     Transformer that contains the list of transformers and apply one by one sequentially.
@@ -155,8 +152,6 @@ class SequentialTransformer(LAMLTransformer):
 
         return dataset
 
-
-@record_history(enabled=False)
 class UnionTransformer(LAMLTransformer):
     """Transformer that apply the sequence on transformers in parallel on dataset and concatenate the result."""
 
@@ -247,7 +242,7 @@ class UnionTransformer(LAMLTransformer):
         self.transformer_list = self.transformer_list[:current]
 
         self.features = fnames
-
+        
         return res
 
     def _fit_transform_multiproc(self, dataset: LAMLDataset) -> List[LAMLDataset]:
@@ -277,7 +272,6 @@ class UnionTransformer(LAMLTransformer):
             res = self._fit_transform_singleproc(dataset)
         else:
             res = self._fit_transform_multiproc(dataset)
-
         res = concatenate(res) if len(res) > 0 else None
 
         return res
@@ -333,7 +327,6 @@ class UnionTransformer(LAMLTransformer):
         return res
 
 
-@record_history(enabled=False)
 class ColumnsSelector(LAMLTransformer):
     """
     Select columns to pass to another transformers (or feature selection).
@@ -379,7 +372,6 @@ class ColumnsSelector(LAMLTransformer):
         return dataset[:, self.keys]
 
 
-@record_history(enabled=False)
 class ColumnwiseUnion(UnionTransformer):
     # TODO: Union is not ABC !! NotImplemented - means not done right now
     """
@@ -443,7 +435,6 @@ class ColumnwiseUnion(UnionTransformer):
         return super().fit_transform(dataset)
 
 
-@record_history(enabled=False)
 class BestOfTransformers(LAMLTransformer):
     """Apply multiple transformers and select best."""
 
@@ -507,7 +498,6 @@ class BestOfTransformers(LAMLTransformer):
         return self.best_transformer.transform(dataset)
 
 
-@record_history(enabled=False)
 class ConvertDataset(LAMLTransformer):
     """Convert dataset to given type."""
 
@@ -533,7 +523,6 @@ class ConvertDataset(LAMLTransformer):
         return self.dataset_type.from_dataset(dataset)
 
 
-@record_history(enabled=False)
 class ChangeRoles(LAMLTransformer):
     """Change data roles (include dtypes etc)."""
 

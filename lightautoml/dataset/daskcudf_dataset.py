@@ -32,7 +32,9 @@ class DaskCudfDataset(CudfDataset):
 
     def __init__(self, data: Optional[DataFrame] = None,
                  roles: Optional[RolesDict] = None,
-                 task: Optional[Task] = None, **kwargs: Series):
+                 task: Optional[Task] = None,
+                 index_ok: bool = False,
+                  **kwargs: Series):
         """Dataset that contains `dask_cudf.core.DataFrame` and
            `dask_cudf.core.Series` target
 
@@ -51,16 +53,25 @@ class DaskCudfDataset(CudfDataset):
         for f in roles:
             for k, r in zip(valid_array_attributes, array_attr_roles):
                 if roles[f].name == r:
-                    kwargs[k] = data[f].reset_index(drop=True).persist()
+                    kwargs[k] = data[f]
                     roles[f] = DropRole()
+
+        if not index_ok:
+            size = len(data.index)
+            data['index'] = data.index
+            mapping = dict(zip( data.index.compute().values_host,np.arange(size) ))
+            data['index'] = data['index'].map(mapping).persist()
+            data = data.set_index('index', drop=True, sorted=True)
+            data = data.persist()
+
+            for val in kwargs:
+                col_name = kwargs[val].name
+                kwargs[val] = kwargs[val].reset_index(drop=False)
+                kwargs[val]['index'] = kwargs[val]['index'].map(mapping).persist()
+                kwargs[val] = kwargs[val].set_index('index', drop=True, sorted=True)[col_name]
+
         self._initialize(task, **kwargs)
 
-        size = len(data.index)
-        data['index'] = data.index
-        mapping = dict(zip( data.index.compute().values_host,np.arange(size) ))
-        data['index'] = data['index'].map(mapping).persist()
-        data = data.set_index('index', drop=True, sorted=True)
-        data = data.persist()
         if data is not None:
             self.set_data(data, None, roles)
 
@@ -141,9 +152,8 @@ class DaskCudfDataset(CudfDataset):
         roles = self.roles
         task = self.task
 
-        params = dict(((x, self.__dict__[x].values)\
+        params = dict(((x, self.__dict__[x].compute())\
                       for x in self._array_like_attrs))
-
         return CudfDataset(data, roles, task, **params)
 
     def to_numpy(self) -> 'NumpyDataset':
@@ -184,6 +194,41 @@ class DaskCudfDataset(CudfDataset):
         """
 
         return self
+        
+    @staticmethod
+    def _hstack(datasets: Sequence[DataFrame]) -> DataFrame:
+        """Define how to concat features arrays.
+
+        Args:
+            datasets: Sequence of tables.
+
+        Returns:
+            concatenated table.
+
+        """
+        cols = []
+        for i, data in enumerate(datasets):
+            cols.extend(data.columns)
+
+        #for data in datasets:
+        #    print(data.compute())
+
+        res = dask_cudf.concat(datasets, axis=1)
+        mapper = dict(zip(np.arange(len(cols)), cols))
+        res = res.rename(columns=mapper)
+        return res
+        
+    @staticmethod
+    def from_dataset(dataset: 'DaskCudfDataset') -> 'DaskCudfDataset':
+        """Convert DaskCudfDataset to DaskCudfDatset
+        (for now, later we add  to_daskcudf() to other classes
+        using from_pandas and from_cudf.
+
+        Returns:
+            Converted to pandas dataset.
+
+        """
+        return dataset.to_daskcudf()
 
     @property
     def shape(self) -> Tuple[Optional[int], Optional[int]]:

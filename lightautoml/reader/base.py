@@ -5,7 +5,6 @@ from typing import Any, Union, Dict, List, Sequence, TypeVar, Optional, cast
 
 import numpy as np
 import pandas as pd
-from log_calls import record_history
 from pandas import Series, DataFrame
 
 from .guess_roles import get_numeric_roles_stat, calc_encoding_rules, rule_based_roles_guess, \
@@ -32,7 +31,6 @@ UserDefinedRolesSequence = Sequence[UserDefinedRole]
 UserRolesDefinition = Optional[Union[UserDefinedRole, UserDefinedRolesDict, UserDefinedRolesSequence]]
 
 
-@record_history(enabled=False)
 class Reader:
     """
     Abstract class for analyzing input data and creating inner
@@ -125,7 +123,6 @@ class Reader:
         return new_reader
 
 
-@record_history(enabled=False)
 class PandasToPandasReader(Reader):
     """
     Reader to convert :class:`~pandas.DataFrame` to AutoML's :class:`~lightautoml.dataset.np_pd_dataset.PandasDataset`.
@@ -313,7 +310,6 @@ class PandasToPandasReader(Reader):
             self.upd_used_features(remove=droplist)
             self._roles = {x: new_roles[x] for x in new_roles if x not in droplist}
             dataset = PandasDataset(train_data[self.used_features], self.roles, task=self.task, **kwargs)
-
         return dataset
 
     def _create_target(self, target: Series):
@@ -473,6 +469,7 @@ class PandasToPandasReader(Reader):
             manual_roles = {}
         top_scores = []
         new_roles_dict = dataset.roles
+
         advanced_roles_params = deepcopy(self.advanced_roles_params)
         drop_co = advanced_roles_params.pop('drop_score_co')
         # guess roles nor numerics
@@ -489,6 +486,7 @@ class PandasToPandasReader(Reader):
             stat = calc_encoding_rules(stat, **advanced_roles_params)
             new_roles_dict = {**new_roles_dict, **rule_based_roles_guess(stat)}
             top_scores.append(stat['max_score'])
+            #print(top_scores)
         #
         # # # guess categories handling type
         stat = get_category_roles_stat(dataset, random_state=self.random_state,
@@ -500,17 +498,19 @@ class PandasToPandasReader(Reader):
             stat = calc_category_rules(stat)
             new_roles_dict = {**new_roles_dict, **rule_based_cat_handler_guess(stat)}
             top_scores.append(stat['max_score'])
+            #print(top_scores)
         #
         # # get top scores of feature
         if len(top_scores) > 0:
             top_scores = pd.concat(top_scores, axis=0)
             # TODO: Add sample params
-
+            #print(list(top_scores.index))
             null_scores = get_null_scores(dataset, list(top_scores.index), random_state=self.random_state,
                                           subsample=self.samples)
             top_scores = pd.concat([null_scores, top_scores], axis=1).max(axis=1)
+            #print(drop_co)
+            #print(top_scores)
             rejected = list(top_scores[top_scores < drop_co].index)
             logger.info('Feats was rejected during automatic roles guess: {0}'.format(rejected))
             new_roles_dict = {**new_roles_dict, **{x: DropRole() for x in rejected}}
-
         return new_roles_dict

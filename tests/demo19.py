@@ -9,6 +9,9 @@ import cudf
 import cupy as cp
 import random
 
+from dask.distributed import Client
+from dask_cuda import LocalCUDACluster
+
 from lightautoml.tasks import Task
 from lightautoml.reader.cudf_reader import CudfReader
 from lightautoml.reader.daskcudf_reader import DaskCudfReader
@@ -81,6 +84,14 @@ def generate_data(n, n_num, n_cat, n_date, n_str, max_n_cat):
     return 'target', cols, data
 
 def test_multiclass():
+
+    #cluster = LocalCUDACluster(rmm_managed_memory=True, CUDA_VISIBLE_DEVICES="0",
+    #                           protocol="ucx", enable_nvlink=True,
+    #                           memory_limit="8GB")
+    #print("dashboard:", cluster.dashboard_link)
+    #client = Client(cluster)
+    #client.run(cudf.set_allocator, "managed")
+
     task = Task("multiclass")
 
     target, _, data = generate_data(n=40, n_num=3, n_cat=2, n_date=5,
@@ -101,16 +112,16 @@ def test_multiclass():
     print("PandasToPandasReader fit_read time:", perf_counter()-start,
           "seconds, the shape of the data is", pd_dataset.data.shape)
     start = perf_counter()
-    cudf_dataset = cudf_reader.fit_read(cudf_data, target=cudf_data[target])
-    print("CudfReader fit_read time:", perf_counter()-start,
-          "seconds, the shape of the data is", cudf_dataset.data.shape)
-    start = perf_counter()
     daskcudf_dataset = daskcudf_reader.fit_read(daskcudf_data,
                                                 target=daskcudf_data[target])
     print("DaskCudfReader fit_read time:", perf_counter()-start,
           "seconds, the shape of the data is",
           daskcudf_dataset.data.compute().shape)    
-
+    start = perf_counter()
+    cudf_dataset = cudf_reader.fit_read(cudf_data, target=cudf_data[target])
+    print("CudfReader fit_read time:", perf_counter()-start,
+          "seconds, the shape of the data is", cudf_dataset.data.shape)
+    
 
 if __name__ == "__main__":
     test_multiclass()

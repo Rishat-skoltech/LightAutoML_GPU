@@ -111,26 +111,19 @@ class TimeToNum_gpu(LAMLTransformer):
             Cupy dataset of numeric features.
 
         """
-        # convert to accepted format and get attributes
-        dataset = dataset.to_cudf()
         data = dataset.data
 
-        # transform
-        time_diff = cudf.Series(pd.date_range(self.basic_time,
-                                         periods=1,
-                                         freq='d')).repeat(len(data)).reset_index()[0]
+        time_diff = cudf.DatetimeIndex(pd.date_range(self.basic_time,
+                                       periods=1, freq='d')).astype(int)[0]
 
-        timedelta = cudf.Series(np.timedelta64(1, self.basic_interval)).\
-                                       repeat(len(data)).reset_index()[0]
+        #shouldn't hardcode this,
+        #should take units from dataset.roles(but its unit is none currently)
+        timedelta = np.timedelta64(1, self.basic_interval)/np.timedelta64(1, 'ns')
 
-        new_arr = cp.empty(data.shape)
-        for n, i in enumerate(data.columns):
+        new_data = self.standardize_date(data, time_diff, timedelta)
 
-            new_arr[:,n] = ((data[i] - time_diff) / timedelta).values.astype(cp.float32)
-
-        # create resulted
-        output = dataset.empty().to_cupy()
-        output.set_data(new_arr, self.features, NumericRole(cp.float32))
+        output = dataset.empty()
+        output.set_data(new_data, self.features, NumericRole(cp.float32))
 
         return output
 
@@ -363,25 +356,9 @@ class DateSeasons_gpu(LAMLTransformer):
         df = dataset.data
         roles = dataset.roles
 
-        new_arr = cp.empty((df.shape[0], len(self._features)), cp.int32)
+        new_arr = self.datetime_to_seasons(df, roles, date_attrs)
 
-        n = 0
-        for col in dataset.features:
-            for seas in self.transformations[col]:
-                vals = getattr(df[col].dt, date_attrs[seas]).values.astype(cp.int32)
-                new_arr[:, n] = vals
-                n += 1
-
-            if roles[col].country is not None:
-                # get years
-                years = cp.unique(df[col].dt.year)
-                hol = holidays.CountryHoliday(roles[col].country, years=years,
-                                              prov=roles[col].prov, state=roles[col].state)
-                new_arr[:, n] = df[col].isin(cudf.Series(pd.Series(hol)))
-                n += 1
-
-        # create resulted
-        output = dataset.empty().to_cupy()
+        output = dataset.empty()
         output.set_data(new_arr, self.features, self.output_role)
 
         return output
@@ -402,7 +379,7 @@ class DateSeasons_gpu(LAMLTransformer):
                                               prov=roles[col].prov, state=roles[col].state)
                 new_arr[:, n] = data[col].isin(cudf.Series(pd.Series(hol)))
                 n += 1
-        return cudf.DataFrame(new_arr)
+        return cudf.DataFrame(new_arr, index=data.index, columns=self.features)
 
     def transform_daskcudf(self, dataset: DaskCudfDataset) -> DaskCudfDataset:
         """Transform dates to categories - seasons and holiday flag.
@@ -418,7 +395,6 @@ class DateSeasons_gpu(LAMLTransformer):
                                               dataset.roles, date_attrs)
         output = dataset.empty()
         output.set_data(new_arr, self.features, self.output_role)
-
         return output
 
 

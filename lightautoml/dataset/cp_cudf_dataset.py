@@ -5,6 +5,7 @@ from copy import copy
 import numpy as np
 import cupy as cp
 import cudf
+import pandas as pd
 
 from cudf.core.dataframe import DataFrame
 from cudf.core.series import Series
@@ -134,7 +135,7 @@ class CupyDataset(NumpyDataset):
             Stacked features array.
 
         """
-        return cp.hstack(cp.asarray(datasets))
+        return cp.hstack(datasets)
 
     def to_numpy(self) -> NumpyDataset:
         """Convert to numpy.
@@ -248,8 +249,6 @@ class CudfDataset(PandasDataset):
                     kwargs[k] = data[f].reset_index(drop=True)
                     roles[f] = DropRole()
         self._initialize(task, **kwargs)
-        for k in kwargs:
-            self.__dict__[k] = cudf.Series(kwargs[k])
         if data is not None:
             self.set_data(data, None, roles)
 
@@ -473,7 +472,7 @@ class CudfDataset(PandasDataset):
         roles = self.roles
         task = self.task
 
-        params = dict(((x, Series(cp.asnumpy(self.__dict__[x].values)))\
+        params = dict(((x, pd.Series(cp.asnumpy(self.__dict__[x].values)))\
                       for x in self._array_like_attrs))
 
         return PandasDataset(data, roles, task, **params)
@@ -492,7 +491,7 @@ class CudfDataset(PandasDataset):
         """Convert random dataset to cudf dataset.
 
         Returns:
-            Converted to pandas dataset.
+            Converted to cudf dataset.
 
         """
         return dataset.to_cudf()

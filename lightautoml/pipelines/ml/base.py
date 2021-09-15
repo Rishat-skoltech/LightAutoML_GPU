@@ -2,8 +2,6 @@
 
 from typing import Sequence, Optional, Tuple, Union, List
 
-from log_calls import record_history
-
 from lightautoml.validation.base import TrainValidIterator
 from ..features.base import FeaturesPipeline, EmptyFeaturePipeline
 from ..selection.base import SelectionPipeline, EmptySelector
@@ -14,7 +12,6 @@ from ...ml_algo.tuning.base import ParamsTuner, DefaultTuner
 from ...ml_algo.utils import tune_and_fit_predict
 
 
-@record_history(enabled=False)
 class MLPipeline:
     """Single ML pipeline.
 
@@ -109,6 +106,7 @@ class MLPipeline:
             Dataset with predictions of all models.
 
         """
+
         self.ml_algos = []
         # train and apply pre selection
         train_valid = train_valid.apply_selector(self.pre_selection)
