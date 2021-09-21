@@ -13,7 +13,7 @@ from .torch_based.linear_model_cupy import TorchBasedLinearEstimator, TorchBased
 
 from .torch_based.linear_model_distributed import TorchBasedLinearEstimator as TLE_dask, \
     TorchBasedLogisticRegression as TLR_dask, TorchBasedLinearRegression as TLinR_dask
-from ..dataset.np_pd_dataset_cupy import CudfDataset, DaskCudfDataset
+from ..dataset.np_pd_dataset_cupy import CudfDataset, DaskCudfDataset, CupyDataset
 from ..utils.logging import get_logger
 from ..validation.base import TrainValidIterator
 
@@ -124,14 +124,15 @@ class LinearLBFGS(TabularMLAlgo):
 
         # for n, (idx, train, valid) in enumerate(train_valid_iterator):
         model = self._infer_params_dask()
+        print(model.__class__.__name__)
+        print(model.model)
+        # print(train.data.shape)
+        print(type(train_valid_iterator.train))
+        model.fit(train_valid_iterator.train.data, train_valid_iterator.train.target)
 
-        model.fit(train_valid_iterator.train.data, train_valid_iterator.train.target,
-                  data_val=train_valid_iterator.get_validation_data().data,
-                  y_val=train_valid_iterator.get_validation_data().target)
+        # print(f'round {n}')
 
-        preds = model.predict(train_valid_iterator.train.data)
-
-        return preds
+        return "Passed"
 
 
     def init_params_on_input(self, train_valid_iterator: TrainValidIterator) -> dict:
@@ -162,11 +163,12 @@ class LinearLBFGS(TabularMLAlgo):
 
         """
         # TODO: make revision upon finish of dask+torch
-
-        if type(train) is CudfDataset:
-            train = train.to_cupy()
-            valid = valid.to_cupy()
+        if type(train) is CupyDataset or type(train) is CudfDataset:
             model = self._infer_params()
+
+            if type(train) is CudfDataset:
+                train = train.to_cupy()
+                valid = valid.to_cupy()
 
         if type(train) is DaskCudfDataset:
             model = self._infer_params_dask()
