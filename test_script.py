@@ -69,7 +69,7 @@ filled_dataset = filler.fit_transform(numeric_dataset)
 date_seasons = datetime_gpu.DateSeasons()
 date_dataset = date_seasons.fit_transform(datetime_dataset)
 
-from lightautoml.ml_algo import linear_gpu
+from lightautoml.ml_algo import linear_gpu_bak
 
 check_roles = {
     TargetRole(): 'TARGET',
@@ -104,7 +104,7 @@ from lightautoml.validation.utils import create_validation_iterator
 
 train_valid = create_validation_iterator(full_dataset[:9000], full_dataset[9000:], n_folds=10)
 
-linear_one = linear_gpu.LinearLBFGS()
+linear_one = linear_gpu_bak.LinearLBFGS()
 linear_one.fit_predict(train_valid)
 
 
