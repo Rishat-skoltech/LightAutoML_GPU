@@ -109,7 +109,7 @@ class LinearLBFGS_gpu(TabularMLAlgo_gpu):
         return suggested_params
 
     def fit_predict_single_fold(self, train: TabularDatasetGpu, valid: TabularDatasetGpu,
-              part_id: int = None, dev_id: int = None) -> Tuple[TorchBasedLinearEstimator, cp.ndarray]:
+              part_id: int = None, dev_id: int = 0) -> Tuple[TorchBasedLinearEstimator, cp.ndarray]:
         """Train on train dataset and predict on holdout dataset.
 
         Args:
@@ -143,7 +143,7 @@ class LinearLBFGS_gpu(TabularMLAlgo_gpu):
             valid_data = valid_data.compute()
             #valid_data = valid_data.get_partition(part_id).compute()
         model = self._infer_params()
-        model = model.to(f'cuda:{dev_id}')
+        model.model = model.model.to(f'cuda:{dev_id}')
         model.fit(train_data, train_target, train_weights, valid_data, valid_target, valid_weights, dev_id)
         val_pred = model.predict(valid_data)
         return model, val_pred
