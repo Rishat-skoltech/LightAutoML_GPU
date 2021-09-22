@@ -2,9 +2,6 @@
 # coding: utf-8
 from time import perf_counter
 
-from dask.distributed import Client
-from dask_cuda import LocalCUDACluster
-
 import numpy as np
 import pandas as pd
 import dask_cudf
@@ -12,10 +9,12 @@ import cudf
 import cupy as cp
 import random
 
+from dask.distributed import Client
+from dask_cuda import LocalCUDACluster
+
 from lightautoml.tasks import Task
-from lightautoml.reader.cudf_reader import CudfReader
+from lightautoml.reader.hybrid_reader import HybridReader
 from lightautoml.reader.daskcudf_reader import DaskCudfReader
-from lightautoml.reader.base import PandasToPandasReader
 
 # Standard python libraries
 import logging
@@ -32,9 +31,11 @@ import torch
 # Imports from our package
 from lightautoml.automl.base import AutoML
 
+
+
 from lightautoml.pipelines.features.lgb_pipeline_gpu import LGBSimpleFeatures_gpu, LGBAdvancedPipeline_gpu
 from lightautoml.pipelines.features.linear_pipeline_gpu import LinearFeatures_gpu
-from lightautoml.ml_algo.boost_xgb_gpu import BoostXGB_dask
+from lightautoml.ml_algo.boost_xgb_gpu import BoostXGB, BoostXGB_dask
 
 from lightautoml.ml_algo.linear_gpu import LinearLBFGS_gpu
 from lightautoml.ml_algo.tuning.optuna import OptunaTuner
@@ -124,28 +125,20 @@ def test_pipeline(client):
     target, _, data = generate_data(n=40, n_num=3, n_cat=2, n_date=5,
                                     n_str=5, max_n_cat=10)
                                     
-    print(data)
-    
     train_data, test_data = train_test_split(data, 
                                          test_size=TEST_SIZE, 
                                          stratify=data[TARGET_NAME], 
                                          random_state=RANDOM_STATE)
     
-    cudf_data = cudf.DataFrame.from_pandas(data, nan_as_null=False)
-    
-    train_cudf = cudf.DataFrame.from_pandas(train_data, nan_as_null=False)
-    test_cudf = cudf.DataFrame.from_pandas(test_data, nan_as_null=False)
-    
-    daskcudf_data = dask_cudf.from_cudf(cudf_data, npartitions=1)
-    
-    train_daskcudf = dask_cudf.from_cudf(train_cudf, npartitions=1)
-    test_daskcudf = dask_cudf.from_cudf(test_cudf, npartitions=1)
+    test_daskcudf = cudf.DataFrame.from_pandas(test_data, nan_as_null=False)
+    test_daskcudf = dask_cudf.from_cudf(test_daskcudf, npartitions=1)
     
     np.random.seed(RANDOM_STATE)
     torch.set_num_threads(N_THREADS)
     
     timer = PipelineTimer(600, mode=2)
     timer_gbm = timer.get_task_timer('gbm') # Get task timer from pipeline timer 
+
     feat_sel_0 = LGBSimpleFeatures_gpu()
     mod_sel_0 = BoostXGB_dask(client, timer=timer_gbm)
     imp_sel_0 = ModelBasedImportanceEstimator()
@@ -158,7 +151,7 @@ def test_pipeline(client):
     timer_gbm_1 = timer.get_task_timer('gbm')
     
     gbm_0 = BoostXGB_dask(client, timer=timer_gbm_0)
-    gbm_1 = BoostXGB_dask(client, timer=timer_gbm_1)
+    gbm_1 = BoostXGB(timer=timer_gbm_1)
 
     tuner_0 = OptunaTuner(n_trials=20, timeout=30, fit_on_holdout=True)
     gbm_lvl0 = MLPipeline([
@@ -185,36 +178,38 @@ def test_pipeline(client):
     )
     task = Task('multiclass', metric = 'accuracy', device='mgpu')
     
-    reader = DaskCudfReader(task = task, samples = None, max_nan_rate = 1,
+    reader = HybridReader(task = task, num_cpu_readers=1, num_gpu_readers=1,
+                              gpu_ratio=0.5, output='mgpu', npartitions= 1,
+                              samples = None, max_nan_rate = 1,
                               max_constant_rate = 1, advanced_roles = True,
                               drop_score_co = -1, n_jobs = 1, compute=True)
                               
     blender = WeightedBlender_gpu()
     automl = AutoML(reader=reader, levels=[
-        [reg_lvl0]#[gbm_lvl0, reg_lvl0]
+        [gbm_lvl0, reg_lvl0]
     ], timer=timer, blender=blender, skip_conn=False)
     
-    oof_pred = automl.fit_predict(train_daskcudf, roles={'target': TARGET_NAME})
+    oof_pred = automl.fit_predict(train_data, roles={'target': TARGET_NAME})
 
     logging.info('oof_pred:\n{}\nShape = {}'.format(oof_pred.data.compute(), oof_pred.shape))
     
-    test_pred = automl.predict(test_daskcudf)
-    logging.debug('Prediction for test data:\n{}\nShape = {}'
-              .format(test_pred, test_pred.shape))
+    #test_pred = automl.predict(test_daskcudf)
+    #logging.debug('Prediction for test data:\n{}\nShape = {}'
+    #          .format(test_pred, test_pred.shape))
 
-    logging.info('Check scores...')
-    logging.info('OOF score: {}'.format(log_loss(train_daskcudf[TARGET_NAME].compute().values.get(), oof_pred.data.compute().get())))
-    logging.info('TEST score: {}'.format(log_loss(test_daskcudf[TARGET_NAME].compute().values.get(), test_pred.data.compute().get())))
+    #logging.info('Check scores...')
+    logging.info('OOF score: {}'.format(log_loss(train_data[TARGET_NAME].values, oof_pred.data.compute().values.get())))
+    #logging.info('TEST score: {}'.format(log_loss(test_daskcudf[TARGET_NAME].compute().values.get(), test_pred.data.compute().get())))
 
 if __name__ == "__main__":
-    '''with LocalCUDACluster(rmm_managed_memory=True, CUDA_VISIBLE_DEVICES="0",
+    with LocalCUDACluster(rmm_managed_memory=True, CUDA_VISIBLE_DEVICES="0",
                                protocol="ucx", enable_nvlink=True,
                                memory_limit="8GB") as cluster:
         print("dashboard:", cluster.dashboard_link)
         with Client(cluster) as client:
             client.run(cudf.set_allocator, "managed")
 
-            test_pipeline(client)'''
+            test_pipeline(client)
 
-    client = 1
-    test_pipeline(client)
+    #client = 1
+    #test_pipeline(client)

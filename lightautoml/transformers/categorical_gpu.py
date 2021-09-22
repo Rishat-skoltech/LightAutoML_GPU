@@ -179,7 +179,7 @@ class LabelEncoder_gpu(LAMLTransformer):
         """
         daskcudf_data = dataset.data
         new_arr = daskcudf_data.map_partitions(self.encode_labels,
-                               meta=cudf.DataFrame(columns=self.features).astype(self._output_role.dtype) )
+                               meta=cudf.DataFrame(columns=self.features).astype(self._output_role.dtype) ).persist()
                                
         output = dataset.empty()
         output.set_data(new_arr, self.features, self._output_role)
@@ -389,7 +389,7 @@ class OHEEncoder_gpu(LAMLTransformer):
             cudf.DataFrame with encoded labels
         """
         output = self.ohe.transform(data)
-        return cudf.DataFrame(output, index=data.index)
+        return cudf.DataFrame(output, index=data.index, columns=self.features)
 
     def transform_daskcudf(self, dataset: DaskCudfDataset) -> DaskCudfDataset:
         """Transform categorical dataset to ohe.
@@ -401,11 +401,14 @@ class OHEEncoder_gpu(LAMLTransformer):
             DaskCupy dataset with encoded labels.
 
         """
-        new_data = dataset.data.map_partitions(self.call_ohe)#, meta=dataset.data)
+        new_data = dataset.data.map_partitions(self.call_ohe, meta=cudf.DataFrame(columns=self.features, index=dataset.data.index) )
 
         output = dataset.empty()
 
         output.set_data(new_data, self.features, NumericRole(self.dtype))
+        print("############THIS IS OHE START############")
+        print(new_data.compute())
+        print("#############THIS IS OHE END#############")
         return output
 
     def fit(self, dataset: GpuNumericalDataset):
@@ -696,21 +699,30 @@ class TargetEncoder_gpu(LAMLTransformer):
             DaskCudf - target encoded features.
 
         """
+        st = perf_counter()
         super().fit(dataset)
+        print(perf_counter() - st, " superfit")
+        st = perf_counter()
         score_func = self.dask_binary_score_func if dataset.task.name == 'binary'\
                                                else self.dask_reg_score_func
 
         alphas = cp.array(self.alphas)[cp.newaxis, :]
         self.encodings = []
+        print(perf_counter() - st, "preps")
+        st = perf_counter()
 
         prior = dataset.target.mean().compute()
+        print(perf_counter() - st, "prior")
+        st = perf_counter()
 
         target_name = dataset.target.name
         folds_name = dataset.folds.name
 
-        daskcudf_data = copy(dataset.data)
+        daskcudf_data = dataset.data.persist()#copy(dataset.data)
         daskcudf_data[folds_name] = dataset.folds
         daskcudf_data[target_name] = dataset.target
+        print(perf_counter() - st, "persisting")
+        st = perf_counter()
 
         n_folds = int(daskcudf_data[folds_name].max().compute() + 1)
 
@@ -719,9 +731,15 @@ class TargetEncoder_gpu(LAMLTransformer):
         f_count = daskcudf_data.map_partitions(self.dask_add_at_1d, folds_name, 1, n_folds,
                               meta=cudf.DataFrame(columns=np.arange(n_folds), dtype='i8')).sum().compute().values
 
+        print(perf_counter() - st, "two map partitions with dask add")
+        st = perf_counter()
         folds_prior = (f_sum.sum() - f_sum) / (f_count.sum() - f_count)
+        print(perf_counter() - st, "folds_prior")
+        st = perf_counter()
 
-        oof_feats = daskcudf_data[dataset.features]
+        oof_feats = daskcudf_data[dataset.features]#.persist()
+        print(perf_counter() - st, "before cycling")
+        st = perf_counter()
 
         for n in range(oof_feats.shape[1]):
             vec_col = daskcudf_data.columns[n]
@@ -754,22 +772,28 @@ class TargetEncoder_gpu(LAMLTransformer):
             oof_count = t_count - f_count_final
             # calc candidates alpha
             candidates = daskcudf_data.map_partitions(self.find_candidates, vec_col,
-                                             folds_name, oof_sum, oof_count, alphas, folds_prior)
+                                             folds_name, oof_sum, oof_count, alphas, folds_prior).persist()
 
             candidates[target_name] = daskcudf_data[target_name]
 
             scores = candidates.map_partitions(score_func, target_name).compute().mean(axis=0).values
             idx = scores.argmin().get()
 
-            oof_feats[vec_col] = candidates[candidates.columns[idx]]
+            oof_feats[vec_col] = candidates[candidates.columns[idx]]#.persist()
             # calc best encoding
             enc = ((t_sum[:, 0] + alphas[0, idx] * prior) / (t_count[:, 0] + alphas[0, idx])).astype(cp.float32)
 
             self.encodings.append(enc)
 
+        print(perf_counter() - st, "after cycling")
+        st = perf_counter()
         output = dataset.empty()
         self.output_role = NumericRole(cp.float32, prob=output.task.name == 'binary')
-        output.set_data(oof_feats, self.features, self.output_role)
+        print(perf_counter() - st, "output")
+        st = perf_counter()
+        output.set_data(oof_feats.persist(), self.features, self.output_role)
+        print(perf_counter() - st, "setting data")
+        st = perf_counter()
         return output
 
     def fit_transform_cupy(self, dataset: GpuNumericalDataset) -> CupyDataset:
@@ -1416,7 +1440,7 @@ class OrdinalEncoder_gpu(LabelEncoder_gpu):
                 co = role.unknown
                 cnts = daskcudf_data[i].value_counts(dropna=False)
                 cnts = cnts.astype(np.float32)[cnts > co].compute().reset_index()
-                cnts = cudf.Series(cnts['index'].astype(str).rank().values, index=cnts['index'], dtype=np.float32)
+                cnts = cudf.Series(cnts['index'].astype(str).rank(), index=cnts['index'], dtype=np.float32)
                 cnts = cnts.append(cudf.Series([cnts.shape[0] + 1], index=[cp.nan], dtype=np.float32))
                 self.dicts[i] = cnts
 

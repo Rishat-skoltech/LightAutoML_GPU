@@ -2,6 +2,8 @@
 
 from typing import Optional, Sequence, Tuple, Union, cast
 
+from time import perf_counter
+
 import numpy as np
 import cupy as cp
 import dask.array as da
@@ -82,8 +84,7 @@ class FoldsIterator_gpu(TrainValidIterator):
 
         train, valid = self.train[tr_idx], self.train[val_idx]
         self._curr_idx += 1
-
-        return val_idx, cast(GpuDataset, train), cast(GpuDataset, valid)
+        return val_idx, train, valid
 
     def get_validation_data(self) -> GpuDataset:
         """Just return train dataset.

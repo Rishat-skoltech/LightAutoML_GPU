@@ -9,8 +9,6 @@ import pandas as pd
 import cudf
 import dask_cudf
 
-from time import perf_counter
-
 from dask_cudf.core import DataFrame, Series
 from ..tasks import Task
 
@@ -54,7 +52,7 @@ class DaskCudfReader(CudfReader):
 
     """
 
-    def __init__(self, task: Task, compute: bool = True, npartitions: int = 1,
+    def __init__(self, task: Task, compute: bool = True, index_ok: bool = False, npartitions: int = 1,
                  *args: Any, **kwargs: Any):
         """
 
@@ -64,6 +62,7 @@ class DaskCudfReader(CudfReader):
         """
         self.compute = compute
         self.npartitions = npartitions
+        self.index_ok = index_ok
         super().__init__(task, *args, **kwargs)
 
     def _prepare_data_and_target(self, train_data, **kwargs):
@@ -84,7 +83,7 @@ class DaskCudfReader(CudfReader):
         else:
             raise NotImplementedError("Input data type is not supported")
         kwargs['target'] = self._create_target(kwargs['target'])
-        return output_data, kwargs
+        return output_data.persist(), kwargs
 
     def fit_read(self, train_data: DataFrame, features_names: Any = None,
                  roles: UserDefinedRolesDict = None, roles_parsed: bool = False,
@@ -108,7 +107,7 @@ class DaskCudfReader(CudfReader):
         # get subsample if it needed
         subsample = train_data
         zero_partn = None
-        train_len = subsample.shape[0].compute()
+        train_len = len(subsample)
         if self.samples is not None and self.samples < train_len:
             frac = self.samples/train_len
             subsample = subsample.sample(frac = frac, random_state=42)
@@ -117,53 +116,58 @@ class DaskCudfReader(CudfReader):
             zero_partn = subsample
         else:
             subsample = subsample.persist()
+            #if self.advanced_roles:
             zero_partn = subsample.get_partition(0).compute()
         # infer roles
-
         for feat in subsample.columns:
-            assert isinstance(feat, str), 'Feature names must be string,' \
-                ' find feature name: {}, with type: {}'.format(feat, type(feat))
-            if feat in parsed_roles:
-                r = parsed_roles[feat]
-                # handle datetimes
-                if r.name == 'Datetime':
-                    # try if it's ok to infer date with given params
-                    if self.compute:
-                        self._try_datetime(subsample[feat], r)
-                    else:
-                        subsample[feat].map_partitions(self._try_datetime, r,
-                                                       meta=(None, None)).compute()
-                #replace default category dtype for numeric roles dtype
-                #if cat col dtype is numeric
-                if r.name == 'Category':
-                    # default category role
-                    cat_role = self._get_default_role_from_str('category')
-                    # check if role with dtypes was exactly defined
-                    try:
-                        flg_default_params = feat in roles['category']
-                    except KeyError:
-                        flg_default_params = False
+            if not roles_parsed:
+                assert isinstance(feat, str), 'Feature names must be string,' \
+                    ' find feature name: {}, with type: {}'.format(feat, type(feat))
+                if feat in parsed_roles:
+                    r = parsed_roles[feat]
+                    # handle datetimes
+                    if r.name == 'Datetime':
+                        # try if it's ok to infer date with given params
+                        if self.compute:
+                            self._try_datetime(subsample[feat], r)
+                        else:
+                            subsample[feat].map_partitions(self._try_datetime, r,
+                                                           meta=(None, None)).compute()
+                    #replace default category dtype for numeric roles dtype
+                    #if cat col dtype is numeric
+                    if r.name == 'Category':
+                        # default category role
+                        cat_role = self._get_default_role_from_str('category')
+                        # check if role with dtypes was exactly defined
+                        try:
+                            flg_default_params = feat in roles['category']
+                        except KeyError:
+                            flg_default_params = False
 
-                    if flg_default_params and\
-                    not np.issubdtype(cat_role.dtype, np.number) and\
-                    np.issubdtype(subsample.dtypes[feat], np.number):
-                        r.dtype=self._get_default_role_from_str('numeric').dtype
-            else:
-                # if no - infer
-                is_ok_feature = False
+                        if flg_default_params and\
+                        not np.issubdtype(cat_role.dtype, np.number) and\
+                        np.issubdtype(subsample.dtypes[feat], np.number):
+                            r.dtype=self._get_default_role_from_str('numeric').dtype
+                else:
+                    # if no - infer
+                    is_ok_feature = False
                 
-                if self.compute:
-                    is_ok_feature = self._is_ok_feature(subsample[feat])
-                else:
-                    is_ok_feature = subsample[feat]\
-                                   .map_partitions(self._is_ok_feature,
+                    if self.compute:
+                        is_ok_feature = self._is_ok_feature(subsample[feat])
+                    else:
+                        is_ok_feature = subsample[feat]\
+                                       .map_partitions(self._is_ok_feature,
                                               meta=(None, '?')).compute().all()
-                if is_ok_feature:
-                    r = self._guess_role(zero_partn[feat])
-                else:
-                    r = DropRole()
-
+                    if is_ok_feature:
+                        r = self._guess_role(zero_partn[feat])
+                    else:
+                        r = DropRole()
             # set back
+            else:
+                try:
+                    r = parsed_roles[feat]
+                except KeyError:
+                    r = DropRole()
             if r.name != 'Drop':
                 self._roles[feat] = r
                 self._used_features.append(feat)
@@ -192,10 +196,10 @@ class DaskCudfReader(CudfReader):
             self.upd_used_features(remove=droplist)
             self._roles = {x: new_roles[x] for x in new_roles if x not in droplist}
             dataset = DaskCudfDataset(train_data[self.used_features],
-                                  self.roles, task=self.task, **kwargs)
+                                  self.roles, index_ok = self.index_ok, task=self.task, **kwargs)
         else:
             dataset = DaskCudfDataset(data=train_data[self.used_features],
-                                  roles=self.roles, task=self.task, **kwargs)
+                                  roles=self.roles, index_ok = self.index_ok, task=self.task, **kwargs)
         return dataset
 
     def _create_target(self, target: Series):

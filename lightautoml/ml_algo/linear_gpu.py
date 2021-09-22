@@ -5,7 +5,6 @@ from typing import Tuple, Union, Sequence
 
 import cupy as cp
 import cudf
-from time import perf_counter
 
 from cuml.linear_model import LogisticRegression, ElasticNet, Lasso
 from cuml.dask.linear_model import Lasso as daskLasso
@@ -78,14 +77,16 @@ class LinearLBFGS_gpu(TabularMLAlgo_gpu):
             if self.task.device == 'gpu':
                 model = TorchBasedLogisticRegression(output_size=self.n_classes, **params)
             elif self.task.device == 'mgpu':
-                model = TLR_dask(output_size=self.n_classes, **params)
+                model = TorchBasedLogisticRegression(output_size=self.n_classes, **params)
+                #model = TLR_dask(output_size=self.n_classes, **params)
             else:
                 raise ValueError('Task not supported')
         elif self.task.name == 'reg':
             if self.task.device == 'gpu':
                 model = TorchBasedLinearRegression(output_size=1, **params)
             elif self.task.device == 'mgpu':
-                model = TLinR_dask(output_size=1, **params)
+                model = TorchBasedLinearRegression(output_size=1, **params)
+                #model = TLinR_dask(output_size=1, **params)
             else:
                 raise ValueError('Device not supported')
         else:
@@ -93,68 +94,22 @@ class LinearLBFGS_gpu(TabularMLAlgo_gpu):
         return model
 
     def init_params_on_input(self, train_valid_iterator: TrainValidIterator) -> dict:
-
         #suggested params are indices for cudf/daskcudf and cols for cupy
         #so need to do an if type()==
         suggested_params = copy(self.default_params)
         train = train_valid_iterator.train
         suggested_params['categorical_idx'] = [x for x in train.features if train.roles[x].name == 'Category']
         suggested_params['embed_sizes'] = ()
+
         if len(suggested_params['categorical_idx']) > 0:
-            suggested_params['embed_sizes'] = train.data[suggested_params['categorical_idx']].max(axis=0).astype(cp.int32) + 1
+            suggested_params['embed_sizes'] = train.data[suggested_params['categorical_idx']].astype(cp.int32).max(axis=0) + 1
+            if type(train) == DaskCudfDataset:
+                suggested_params['embed_sizes'] = suggested_params['embed_sizes'].compute()
         suggested_params['data_size'] = train.shape[1]
         return suggested_params
 
-    def fit_predict_dask_(self, train_valid_iterator: TrainValidIterator):
-        """Fit and then predict accordig the strategy that uses train_valid_iterator.
-
-        If item uses more then one time it will
-        predict mean value of predictions.
-        If the element is not used in training then
-        the prediction will be ``cp.nan`` for this item
-
-        Args:
-            train_valid_iterator: Classic cv-iterator.
-
-        Returns:
-            Dataset with predicted values.
-
-        """
-
-        assert self.is_fitted is False, 'Algo is already fitted'
-        # init params on input if no params was set before
-        if self._params is None:
-            self.params = self.init_params_on_input(train_valid_iterator)
-
-        # save features names
-        self._features = train_valid_iterator.features
-        # get metric and loss if None
-        self.task = train_valid_iterator.train.task
-
-        # get empty validation data to write prediction
-        # TODO: Think about this cast
-        outp_dim = 1
-        if self.task.name == 'multiclass':
-            outp_dim = int(train_valid_iterator.train.target.compute().values.max()+1)
-        # save n_classes to infer params
-        self.n_classes = outp_dim
-
-
-
-        # for n, (idx, train, valid) in enumerate(train_valid_iterator):
-        model = self._infer_params()
-        print(model.__class__.__name__)
-        print(model.model)
-        # print(train.data.shape)
-        print(type(train_valid_iterator.train))
-        model.fit(train_valid_iterator.train.data, train_valid_iterator.train.target)
-
-        # print(f'round {n}')
-
-        return "Passed"
-
-    def fit_predict_single_fold(self, train: TabularDatasetGpu, valid: TabularDatasetGpu
-                                ) -> Tuple[TorchBasedLinearEstimator, cp.ndarray]:
+    def fit_predict_single_fold(self, train: TabularDatasetGpu, valid: TabularDatasetGpu,
+              part_id: int = None, dev_id: int = None) -> Tuple[TorchBasedLinearEstimator, cp.ndarray]:
         """Train on train dataset and predict on holdout dataset.
 
         Args:
@@ -165,16 +120,36 @@ class LinearLBFGS_gpu(TabularMLAlgo_gpu):
             Target predictions for valid dataset.
 
         """
-        #if type(train) is CudfDataset:
-        #    train = train.to_cupy()
-        #    valid = valid.to_cupy()
-
+        train_target = train.target
+        train_weights = train.weights
+        valid_target = valid.target
+        valid_weights = valid.weights
+        train_data = train.data
+        valid_data = valid.data
+        if type(train) == DaskCudfDataset:
+            assert part_id is not None, 'fit_predict_single_fold: partition id should be set if data is distributed'
+            train_target = train_target.compute()
+            #train_target = train_target.get_partition(part_id).compute()
+            if train_weights is not None:
+                train_weights = train_weights.compute()
+                #train_weights = train.weights.get_partition(part_id).compute()
+            valid_target = valid_target.compute()
+            #valid_target = valid_target.get_partition(part_id).compute()
+            if valid_weights is not None:
+                #valid_weights = valid_weights.get_partition(part_id).compute()
+                valid_weights = valid_weights.compute()
+            train_data = train_data.compute()
+            #train_data = train_data.get_partition(part_id).compute()
+            valid_data = valid_data.compute()
+            #valid_data = valid_data.get_partition(part_id).compute()
         model = self._infer_params()
-        model.fit(train.data, train.target, train.weights, valid.data, valid.target, valid.weights)
-        val_pred = model.predict(valid.data)
+        model = model.to(f'cuda:{dev_id}')
+        model.fit(train_data, train_target, train_weights, valid_data, valid_target, valid_weights, dev_id)
+        val_pred = model.predict(valid_data)
         return model, val_pred
 
-    def predict_single_fold(self, model: TorchBasedLinearEstimator, dataset: TabularDatasetGpu) -> cp.ndarray:
+    def predict_single_fold(self, model: TorchBasedLinearEstimator, dataset: TabularDatasetGpu,
+                  part_id: int = None, dev_id: int = None) -> cp.ndarray:
         """Implements prediction on single fold.
 
         Args:
@@ -185,7 +160,13 @@ class LinearLBFGS_gpu(TabularMLAlgo_gpu):
             Predictions for input dataset.
 
         """
-        pred = model.predict(dataset.data)
+        dataset_data = dataset.data
+        if type(dataset) == DaskCudfDataset:
+            assert part_id is not None, 'predict_single_fold: partition id should be set if data is distributed'
+            dataset_data = dataset_data.compute()
+            #dataset_data = dataset_data.get_partition(part_id).compute()
+
+        pred = model.predict(dataset_data)
 
         return pred
 
@@ -269,7 +250,7 @@ class LinearL1CD_gpu(TabularMLAlgo_gpu):
 
         return pred
 
-    def fit_predict_single_fold(self, train: TabularDatasetGpu, valid: TabularDatasetGpu) -> Tuple[LinearEstimator, cp.ndarray]:
+    def fit_predict_single_fold(self, train: TabularDatasetGpu, valid: TabularDatasetGpu, part_id: int = None) -> Tuple[LinearEstimator, cp.ndarray]:
         """Train on train dataset and predict on holdout dataset.
 
         Args:
@@ -280,14 +261,33 @@ class LinearL1CD_gpu(TabularMLAlgo_gpu):
             Target predictions for valid dataset.
 
         """
-        #if type(train) is CudfDataset:
-        #    train = train.to_cupy()
-        #    valid = valid.to_cupy()
+        train_target = train.target
+        train_weights = train.weights
+        valid_target = valid.target
+        valid_weights = valid.weights
+        train_data = train.data
+        valid_data = valid.data
+        if type(train) == DaskCudfDataset:
+            assert part_id is not None, 'fit_predict_single_fold: partition id should be set if data is distributed'
+            train_target = train_target.compute()
+            #train_target = train_target.get_partition(part_id).compute()
+            if train_weights is not None:
+                train_weights = train_weights.compute()
+                #train_weights = train_weights.get_partition(part_id).compute()
+            valid_target = valid_target.compute()
+            #valid_target = valid_target.get_partition(part_id).compute()
+            if valid_weights is not None:
+                #valid_weights = valid_weights.get_partition(part_id).compute()
+                valid_weights = valid_weights.compute()
+            train_data = train_data.compute()
+            #train_data = train_data.get_partition(part_id).compute()
+            valid_data = valid_data.compute()
+            #valid_data = valid_data.get_partition(part_id).compute()
 
         _model, cs, l1_ratios, early_stopping = self._infer_params()
 
-        train_target, train_weight = self.task.losses['cuml'].fw_func(train.target, train.weights)
-        valid_target, valid_weight = self.task.losses['cuml'].fw_func(valid.target, valid.weights)
+        train_target, train_weight = self.task.losses['cuml'].fw_func(train_target, train_weights)
+        valid_target, valid_weight = self.task.losses['cuml'].fw_func(valid_target, valid_weights)
 
         model = deepcopy(_model)
 
@@ -318,7 +318,7 @@ class LinearL1CD_gpu(TabularMLAlgo_gpu):
                 except ValueError:
                     model.set_params(**{'alpha': c})
 
-                model.fit(train.data, train_target, train_weight)
+                model.fit(train_data, train_target, train_weight)
 
                 model_coefs = model.coef_
 
@@ -332,7 +332,7 @@ class LinearL1CD_gpu(TabularMLAlgo_gpu):
                         logger.debug('C = {0} all model coefs are 0'.format(c))
                         continue
 
-                pred = self._predict_w_model_type(model, valid.data)
+                pred = self._predict_w_model_type(model, valid_data)
                 score = metric(valid_target, pred, valid_weight)
 
                 logger.debug('C = {0}, l1_ratio = {1}, score = {2}'.format(c, 1, score))
@@ -371,7 +371,7 @@ class LinearL1CD_gpu(TabularMLAlgo_gpu):
         val_pred = self.task.losses['cuml'].bw_func(best_pred)
         return best_model, val_pred.values
 
-    def predict_single_fold(self, model: LinearEstimator, dataset: TabularDatasetGpu) -> cp.ndarray:
+    def predict_single_fold(self, model: LinearEstimator, dataset: TabularDatasetGpu, part_id: int = None) -> cp.ndarray:
         """Implements prediction on single fold.
 
         Args:
@@ -382,8 +382,13 @@ class LinearL1CD_gpu(TabularMLAlgo_gpu):
             Predictions for input dataset.
 
         """
+        dataset_data = dataset.data
+        if type(dataset) == DaskCudfDataset:
+            assert part_id is not None, 'predict_single_fold: partition id should be set if data is distributed'
+            dataset_data = dataset_data.compute()
+            #dataset_data = dataset_data.get_partition(part_id).compute()
 
-        pred = self.task.losses['cuml'].bw_func(self._predict_w_model_type(model, dataset.data))
+        pred = self.task.losses['cuml'].bw_func(self._predict_w_model_type(model, dataset_data))
 
         return pred
 

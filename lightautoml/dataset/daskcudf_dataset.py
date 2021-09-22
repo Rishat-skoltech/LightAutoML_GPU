@@ -55,7 +55,6 @@ class DaskCudfDataset(CudfDataset):
                 if roles[f].name == r:
                     kwargs[k] = data[f]
                     roles[f] = DropRole()
-
         if not index_ok:
             size = len(data.index)
             data['index'] = data.index
@@ -63,7 +62,6 @@ class DaskCudfDataset(CudfDataset):
             data['index'] = data['index'].map(mapping).persist()
             data = data.set_index('index', drop=True, sorted=True)
             data = data.persist()
-
             for val in kwargs:
                 col_name = kwargs[val].name
                 kwargs[val] = kwargs[val].reset_index(drop=False)
@@ -71,7 +69,6 @@ class DaskCudfDataset(CudfDataset):
                 kwargs[val] = kwargs[val].set_index('index', drop=True, sorted=True)[col_name]
 
         self._initialize(task, **kwargs)
-
         if data is not None:
             self.set_data(data, None, roles)
 
@@ -119,7 +116,7 @@ class DaskCudfDataset(CudfDataset):
 
         #UNCOMMENT THIS AFTER 21.08 RELEASE
         #self.data = self.data.astype(self.dtypes)
-
+        self.data = self.data.persist()
         # handle dates types
         self.data = self.data.map_partitions(self._convert_datetime,
                                          date_columns, meta=self.data).persist()
@@ -139,7 +136,7 @@ class DaskCudfDataset(CudfDataset):
 
         """
 
-        return data.loc[k].persist()#.compute()
+        return data.loc[k].persist()
 
     def to_cudf(self) -> CudfDataset:
         """Convert to class:`CudfDataset`.

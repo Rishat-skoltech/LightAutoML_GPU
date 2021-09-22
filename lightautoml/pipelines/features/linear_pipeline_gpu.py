@@ -180,6 +180,7 @@ class LinearFeatures_gpu(FeaturesPipeline, TabularDataFeatures_gpu):
             if self.output_categories:
                 final = ChangeRoles(CategoryRole(np.float32))
             else:
+                print("SPARSE OHE FOR LINEAR FEATURES")
                 if self.sparse_ohe == 'auto':
                     final = OHEEncoder_gpu(total_feats_cnt=train.shape[1])
                 else:

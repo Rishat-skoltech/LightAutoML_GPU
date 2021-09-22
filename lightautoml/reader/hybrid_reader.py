@@ -43,7 +43,9 @@ class HybridReader(CudfReader):
     """
 
     def __init__(self, task: Task, num_cpu_readers: int, num_gpu_readers: int, output: str, gpu_ratio: int,
-                 advanced_roles: bool = True, npartitions: int = 1, *args: Any, **kwargs: Any):
+                 advanced_roles: bool = True, index_ok: bool = False, npartitions: int = 1, 
+                 compute: bool = False, *args: Any, **kwargs: Any):
+                 #advanced_roles: bool = True, *args: Any, **kwargs: Any):
         """
 
         Args:
@@ -58,6 +60,8 @@ class HybridReader(CudfReader):
         self.gpu_ratio = gpu_ratio
         self.advanced_roles = advanced_roles
         self.npartitions = npartitions
+        self.index_ok = index_ok
+        self.compute = compute
 
         self.args = args
         self.params = kwargs
@@ -148,8 +152,10 @@ class HybridReader(CudfReader):
         elif self.output == 'cpu':
             final_reader = PandasToPandasReader(self.task, *self.args, **self.params, advanced_roles=False)
         elif self.output == 'mgpu':
-            final_reader = DaskCudfReader(self.task, *self.args, **self.params, advanced_roles=False, npartitions=self.npartitions)
+            final_reader = DaskCudfReader(self.task, *self.args, **self.params, advanced_roles=False, npartitions=self.npartitions, index_ok=self.index_ok, compute = self.compute)
 
+        st = perf_counter()
         output = final_reader.fit_read(train_data, roles=final_roles, roles_parsed=True, target=train_data[self.target])
+        print(perf_counter() - st, "final fit_read")
 
         return output

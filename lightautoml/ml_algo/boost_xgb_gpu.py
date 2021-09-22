@@ -248,7 +248,7 @@ class BoostXGB(OptunaTunableMixin, TabularMLAlgo_gpu, ImportanceEstimator):
 
         return trial_values
 
-    def fit_predict_single_fold(self, train: TabularDatasetGpu, valid: TabularDatasetGpu) -> Tuple[xgb.Booster, np.ndarray]:
+    def fit_predict_single_fold(self, train: TabularDatasetGpu, valid: TabularDatasetGpu, part_id: int = None, dev_id: int = None) -> Tuple[xgb.Booster, np.ndarray]:
         """Implements training and prediction on single fold.
 
         Args:
@@ -259,24 +259,41 @@ class BoostXGB(OptunaTunableMixin, TabularMLAlgo_gpu, ImportanceEstimator):
             Tuple (model, predicted_values)
 
         """
-
-         
+        train_target = train.target
+        train_weights = train.weights
+        valid_target = valid.target
+        valid_weights = valid.weights
+        train_data = train.data
+        valid_data = valid.data
+        if type(train) == DaskCudfDataset:
+            assert part_id is not None, 'fit_predict_single_fold: partition id should be set if data is distributed'
+            train_target = train_target.compute()
+            #train_target = train_target.get_partition(part_id).compute()
+            if train_weights is not None:
+                train_weights = train_weights.compute()
+                #train_weights = train_weights.get_partition(part_id).compute()
+            valid_target = valid_target.compute()
+            #valid_target = valid_target.get_partition(part_id).compute()
+            if valid_weights is not None:
+                #valid_weights = valid_weights.get_partition(part_id).compute()
+                valid_weights = valid_weights.compute()
+            train_data = train_data.compute()
+            #train_data = train_data.get_partition(part_id).compute()
+            valid_data = valid_data.compute()
+            #valid_data = valid_data.get_partition(part_id).compute()
         params, num_trees, early_stopping_rounds, verbose_eval, fobj, feval = self._infer_params()
-
-        train_target, train_weight = self.task.losses['lgb'].fw_func(train.target, train.weights)
-        valid_target, valid_weight = self.task.losses['lgb'].fw_func(valid.target, valid.weights)
-
-        xgb_train = xgb.DMatrix(train.data, label=train_target, weight=train_weight)
-        xgb_valid = xgb.DMatrix(valid.data, label=valid_target, weight=valid_weight)
+        train_target, train_weight = self.task.losses['lgb'].fw_func(train_target, train_weights)
+        valid_target, valid_weight = self.task.losses['lgb'].fw_func(valid_target, valid_weights)
+        xgb_train = xgb.DMatrix(train_data, label=train_target, weight=train_weight)
+        xgb_valid = xgb.DMatrix(valid_data, label=valid_target, weight=valid_weight)
         model = xgb.train(params, xgb_train, num_boost_round=num_trees, evals=[(xgb_train, 'train'), (xgb_valid, 'valid')],
                           obj=fobj, feval=feval, early_stopping_rounds=early_stopping_rounds, verbose_eval=verbose_eval
                           )
-        val_pred = model.inplace_predict(valid.data)
+        val_pred = model.inplace_predict(valid_data)
         val_pred = self.task.losses['lgb'].bw_func(val_pred)
-
         return model, val_pred
 
-    def predict_single_fold(self, model: xgb.Booster, dataset: TabularDatasetGpu) -> np.ndarray:
+    def predict_single_fold(self, model: xgb.Booster, dataset: TabularDatasetGpu, part_id: int = None) -> np.ndarray:
         """Predict target values for dataset.
 
         Args:
@@ -287,7 +304,13 @@ class BoostXGB(OptunaTunableMixin, TabularMLAlgo_gpu, ImportanceEstimator):
             Predicted target values.
 
         """
-        pred = self.task.losses['lgb'].bw_func(model.inplace_predict(dataset.data))
+        dataset_data = dataset.data
+        if type(dataset) == DaskCudfDataset:
+            assert part_id is not None, 'predict_single_fold: partition id should be set if data is distributed'
+            dataset_data = dataset_data.compute()
+            #dataset_data = dataset_data.get_partition(part_id).compute()
+
+        pred = self.task.losses['lgb'].bw_func(model.inplace_predict(dataset_data))
 
         return pred
 
@@ -341,7 +364,7 @@ class BoostXGB_dask(BoostXGB):
                 setattr(new_inst, k, deepcopy(v, memo))
         return new_inst
         
-    def fit_predict_single_fold(self, train: DaskCudfDataset, valid: DaskCudfDataset) -> Tuple[dxgb.Booster, np.ndarray]:
+    def fit_predict_single_fold(self, train: DaskCudfDataset, valid: DaskCudfDataset, part_id: int = None, dev_id: int = None) -> Tuple[dxgb.Booster, np.ndarray]:
         """Implements training and prediction on single fold.
 
         Args:

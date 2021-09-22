@@ -641,8 +641,8 @@ class QuantileBinning_gpu(LAMLTransformer):
         self.bins = []
         for col in data.columns:
             q = data[col].dropna().quantile(grid)
-            q = q.unique().astype(np.float32)
-            self.bins.append(q.compute())
+            q = q.unique().astype(cp.float32)
+            self.bins.append(q.compute().values)
         return self
 
     def transform(self, dataset: GpuDataset) -> GpuDataset:
@@ -694,11 +694,14 @@ class QuantileBinning_gpu(LAMLTransformer):
         return output
 
     def digitize(self, data):
-        output = cudf.DataFrame(columns = self.features, index = data.index)
-        sl = data.isna()
-        for i,col in enumerate(data.columns):
-            output[output.columns[i]] = data[col].digitize(self.bins[i]).values#+1
-            output[output.columns[i]][sl[col]] = 0
+        cp_data = data.values
+        sl = cp.isnan(cp_data)
+        new_data = cp.zeros(cp_data.shape, dtype=cp.int32)
+        for n, b in enumerate(self.bins):
+            new_data[:, n] = cp.searchsorted(b, cp.where(sl[:, n], cp.inf, cp_data[:, n])) + 1
+
+        new_data = cp.where(sl, 0, new_data)
+        output = cudf.DataFrame(new_data, columns = self.features, index=data.index)
         return output
 
     def transform_daskcudf(self, dataset: DaskCudfDataset) -> DaskCudfDataset:
@@ -712,7 +715,7 @@ class QuantileBinning_gpu(LAMLTransformer):
 
         """
         new_data = dataset.data.map_partitions(self.digitize,
-                                              meta=cudf.DataFrame(columns=self.features).astype(np.int32)).persist()
+                                              meta=cudf.DataFrame(columns=self.features)).persist()
         output = dataset.empty()
         output.set_data(new_data, self.features, CategoryRole(np.int32, label_encoded=True))
         return output

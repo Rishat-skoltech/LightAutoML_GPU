@@ -54,7 +54,7 @@ def gini_normalizedc_gpu(a: GpuFrame, p: GpuFrame) -> float:
     """
     out = ginic_gpu(a, p) / ginic_gpu(a, a)
 
-    assert not np.isnan(out), 'gini index is givin nan, is that ok?'
+    assert not np.isnan(out), 'gini index is givin nan, is that ok? {0} and {1}'.format(a, p)
     return out
 
 

@@ -64,8 +64,8 @@ class CatLinear(nn.Module):
             #embed_sizes can be cudf.series for some reason
             #put if type()==
             self.cat_params = nn.Parameter(torch.zeros(embed_sizes.sum(), output_size).cuda())
-            embed_idx = torch.LongTensor(embed_sizes).cumsum(dim=0) - torch.LongTensor(embed_sizes)
-            self.embed_idx = embed_idx.cuda()
+            self.register_buffer('embed_idx',
+                 torch.LongTensor(embed_sizes).cumsum(dim=0) - torch.LongTensor(embed_sizes))
 
     def forward(self, numbers: Optional[torch.Tensor] = None, categories: Optional[torch.Tensor] = None):
         """Forward-pass.
@@ -76,10 +76,8 @@ class CatLinear(nn.Module):
 
         """
         x = self.bias
-
         if self.linear is not None:
             x = x + self.linear(numbers)
-
         if self.cat_params is not None:
             x = x + self.cat_params[categories + self.embed_idx].sum(dim=1)
         return x
@@ -167,7 +165,7 @@ class TorchBasedLinearEstimator:
         self.loss = loss  # loss(preds, true) -> loss_arr, assume reduction='none'
         self.metric = metric  # metric(y_true, y_preds, sample_weight = None) -> float (greater_is_better)
 
-    def _prepare_data(self, data: ArrayOrSparseMatrix):
+    def _prepare_data(self, data: ArrayOrSparseMatrix, dev_id: int = 0):
         """Prepare data based on input type.
 
         Args:
@@ -179,11 +177,11 @@ class TorchBasedLinearEstimator:
         """
         # TODO: uncomment this after sparse matrix is supported
         # if sparse.issparse(data):
-        #     return self._prepare_data_sparse(data)
+        #     return self._prepare_data_sparse(data, dev_id)
 
-        return self._prepare_data_dense(data)
+        return self._prepare_data_dense(data, dev_id)
 
-    #def _prepare_data_sparse(self, data: sparse.spmatrix):
+    #def _prepare_data_sparse(self, data: sparse.spmatrix, dev_id: int = 0):
     #    """Prepare sparse matrix.
     #
     #    Only supports numeric features.
@@ -199,7 +197,7 @@ class TorchBasedLinearEstimator:
     #    data = convert_scipy_sparse_to_torch_float(data)
     #    return data, None
 
-    def _prepare_data_dense(self, data: cp.ndarray):
+    def _prepare_data_dense(self, data: cp.ndarray, dev_id: int = 0):
         """Prepare dense matrix.
 
         Split categorical and numeric features.
@@ -221,11 +219,11 @@ class TorchBasedLinearEstimator:
             return data, data_cat
 
         elif len(self.categorical_idx) == 0:
-            data = torch.as_tensor(data.values.astype(cp.float32), device='cuda')
+            data = torch.as_tensor(data.values.astype(cp.float32), device=f'cuda:{dev_id}')
             return data, None
 
         else:
-            data_cat = torch.as_tensor(data.values.astype(cp.int32), device='cuda')
+            data_cat = torch.as_tensor(data.values.astype(cp.int32), device=f'cuda:{dev_id}')
             return None, data_cat
 
     def _optimize(self, data: torch.Tensor, data_cat: Optional[torch.Tensor], y: torch.Tensor = None,
@@ -293,7 +291,7 @@ class TorchBasedLinearEstimator:
         return loss + .5 * penalty / c
 
     def fit(self, data: cp.ndarray, y: cp.ndarray, weights: Optional[np.ndarray] = None,
-            data_val: Optional[np.ndarray] = None, y_val: Optional[np.ndarray] = None, weights_val: Optional[np.ndarray] = None):
+            data_val: Optional[np.ndarray] = None, y_val: Optional[np.ndarray] = None, weights_val: Optional[np.ndarray] = None, dev_id: int = 0):
         """Fit method.
 
         Args:
@@ -310,7 +308,7 @@ class TorchBasedLinearEstimator:
         """
         assert self.model is not None, 'Model should be defined'
         #TYPES ARE CUDF
-        data, data_cat = self._prepare_data(data)
+        data, data_cat = self._prepare_data(data, dev_id)
 
         #if types are cudf
         if y is not None:
@@ -326,9 +324,9 @@ class TorchBasedLinearEstimator:
 
         if len(y.shape) == 1:
             y = y[:, cp.newaxis]
-        y = torch.as_tensor(y.astype(cp.float32), device='cuda')
+        y = torch.as_tensor(y.astype(cp.float32), device=f'cuda:{dev_id}')
         if weights is not None:
-            weights = torch.as_tensor(weights.astype(cp.float32), device='cuda')
+            weights = torch.as_tensor(weights.astype(cp.float32), device=f'cuda:{dev_id}')
 
         if data_val is None and y_val is None:
             logger.warning('Validation data should be defined. No validation will be performed and C = 1 will be used')
@@ -336,7 +334,7 @@ class TorchBasedLinearEstimator:
 
             return self
 
-        data_val, data_val_cat = self._prepare_data(data_val)
+        data_val, data_val_cat = self._prepare_data(data_val, dev_id)
        
         best_score = -np.inf
         best_model = None

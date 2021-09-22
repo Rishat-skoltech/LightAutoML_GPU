@@ -137,7 +137,7 @@ def mean_huber_error_mgpu(y_true: da.Array, y_pred: da.Array,
     err = y_pred - y_true
     s = da.where(err < 0, err > -a, err < a)
 
-    abs_err = da.where(err > 0, err, -err)
+    abs_err = da.where(err > 0, ebestclassmulticlassrr, -err)
 
     err = da.where(s, .5 * (err ** 2), a * abs_err - .5 * (a ** 2))
 
@@ -464,6 +464,13 @@ class BestClassBinaryWrapper_gpu:
 
         return self.func(y_true, y_pred, sample_weight=sample_weight, **kwargs)
 
+class AccuracyScoreWrapper:
+    def __call__(self, y_true: cp.ndarray, y_pred: cp.ndarray, sample_weight: Optional[cp.ndarray] = None, **kwargs):
+        if type(y_pred) == cp.ndarray:
+            return accuracy_score(y_true, y_pred)#, sample_weight=sample_weight, **kwargs)
+        elif type(y_pred) == da.Array:
+            return dask_accuracy_score(y_true, y_pred, sample_weight=sample_weight, **kwargs)
+
 class BestClassMulticlassWrapper_gpu:
     """Metric wrapper to get best class prediction instead of probs for multiclass.
 
@@ -483,7 +490,9 @@ class BestClassMulticlassWrapper_gpu:
     def __call__(self, y_true: cp.ndarray, y_pred: cp.ndarray, sample_weight: Optional[cp.ndarray] = None, **kwargs):
 
         if type(y_pred) == cp.ndarray:
+
             y_pred = (y_pred.argmax(axis=1)).astype(cp.float32)
+
         elif type(y_pred) == da.Array:
 
             def dask_argmax_gpu(data):
@@ -494,6 +503,7 @@ class BestClassMulticlassWrapper_gpu:
             y_pred = da.map_blocks(dask_argmax_gpu, y_pred,
                                    meta=cp.array((), dtype=cp.float32))[:,0]
         else:
+
             raise NotImplementedError
 
         return self.func(y_true, y_pred, sample_weight=sample_weight, **kwargs)
@@ -522,7 +532,7 @@ _valid_str_multiclass_metric_names_gpu = {
     #'auc_mu': auc_mu_gpu,
     #'auc': roc_auc_ovr_gpu,
     'crossentropy': partial(log_loss, eps=1e-7),
-    'accuracy': BestClassMulticlassWrapper_gpu(accuracy_score),
+    'accuracy': BestClassMulticlassWrapper_gpu(AccuracyScoreWrapper()),
     # TODO: uncomment after f1 score support is added
     # 'f1_macro': BestClassMulticlassWrapper_gpu(F1Factory('macro')),
     # 'f1_micro': BestClassMulticlassWrapper_gpu(F1Factory('micro')),
@@ -538,7 +548,7 @@ _valid_str_metric_names_gpu = {
 _valid_str_binary_metric_names_mgpu = {
     'auc': roc_auc_score_mgpu,
     'logloss': partial(log_loss_mgpu, eps=1e-7),
-    'accuracy': BestClassBinaryWrapper_gpu(dask_accuracy_score),
+    'accuracy': BestClassBinaryWrapper_gpu(AccuracyScoreWrapper()),
 }
 
 _valid_str_reg_metric_names_mgpu = {
@@ -556,7 +566,7 @@ _valid_str_multiclass_metric_names_mgpu = {
     #'auc_mu': auc_mu_mgpu,
     #'auc': roc_auc_ovr_mgpu,
     'crossentropy':  partial(log_loss_mgpu, eps=1e-7),
-    'accuracy': BestClassMulticlassWrapper_gpu(dask_accuracy_score),
+    'accuracy': BestClassMulticlassWrapper_gpu(AccuracyScoreWrapper()),
     # TODO: uncomment after f1 score support is added
     # 'f1_macro': BestClassMulticlassWrapper_gpu(F1Factory('macro')),
     # 'f1_micro': BestClassMulticlassWrapper_gpu(F1Factory('micro')),

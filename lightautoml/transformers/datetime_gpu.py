@@ -95,7 +95,7 @@ class TimeToNum_gpu(LAMLTransformer):
         #should take units from dataset.roles(but its unit is none currently)
         timedelta = np.timedelta64(1, self.basic_interval)/np.timedelta64(1, 'ns')
 
-        new_data = data.map_partitions(self.standardize_date, time_diff, timedelta)
+        new_data = data.map_partitions(self.standardize_date, time_diff, timedelta, meta=cudf.DataFrame(columns=data.columns))
 
         output = dataset.empty()
         output.set_data(new_data, self.features, NumericRole(cp.float32))
@@ -218,7 +218,7 @@ class BaseDiff_gpu(LAMLTransformer):
             output = (data[self.diff_names].astype(int).values.T - data[col].astype(int).values) / std
             feats_block.append(output.T)
 
-        return cudf.DataFrame(cp.concatenate(feats_block, axis=1))
+        return cudf.DataFrame(cp.concatenate(feats_block, axis=1), columns=self.features)
 
     def transform_daskcudf(self, dataset: DaskCudfDataset) -> DaskCudfDataset:
         """Transform dates to numeric differences with base date.
@@ -237,7 +237,7 @@ class BaseDiff_gpu(LAMLTransformer):
         #(but its unit is none currently)
         timedelta = np.timedelta64(1, self.basic_interval)/np.timedelta64(1, 'ns')
 
-        new_data = data.map_partitions(self.standardize_date_concat, timedelta)
+        new_data = data.map_partitions(self.standardize_date_concat, timedelta, meta=cudf.DataFrame(columns=self.features))
 
         output = dataset.empty()
         output.set_data(new_data, self.features, NumericRole(cp.float32))
@@ -392,7 +392,8 @@ class DateSeasons_gpu(LAMLTransformer):
 
         """
         new_arr = dataset.data.map_partitions(self.datetime_to_seasons,
-                                              dataset.roles, date_attrs)
+                                              dataset.roles, date_attrs,
+                                              meta=cudf.DataFrame(columns = self.features))
         output = dataset.empty()
         output.set_data(new_arr, self.features, self.output_role)
         return output

@@ -2,13 +2,14 @@
 
 from typing import Tuple, Sequence, List, cast, Optional, Callable, Union
 
+from scipy.optimize import minimize_scalar
+
 import numpy as np
 import cupy as cp
 import dask.array as da
 import dask.dataframe as dd
 import cudf
 
-from scipy.optimize import minimize_scalar
 
 from .blend import WeightedBlender
 
@@ -49,6 +50,10 @@ class WeightedBlender_gpu(WeightedBlender):
             weighted_pred /= not_nulls
             weighted_pred = da.where(not_nulls == 0, cp.nan, weighted_pred)
 
+            cols = ['WeightedBlend_{0}'.format(x) for x in range(weighted_pred.shape[1])]
+            index = splitted_preds[0].data.index
+            weighted_pred = dd.from_dask_array(weighted_pred, columns = cols, index = index, meta=cudf.DataFrame())
+
         else:
 
             weighted_pred = cp.nansum(cp.array([x.data * w for (x, w) in zip(splitted_preds, wts)]), axis=0).astype(np.float32)
@@ -64,9 +69,6 @@ class WeightedBlender_gpu(WeightedBlender):
         outp = splitted_preds[0].empty()
 
         cols = ['WeightedBlend_{0}'.format(x) for x in range(weighted_pred.shape[1])]
-        index = splitted_preds[0].data.index
-        weighted_pred = dd.from_dask_array(weighted_pred, columns = cols, index = index, meta=cudf.DataFrame())
-
         outp.set_data(weighted_pred, cols,
                       NumericRole(np.float32, prob=self._outp_prob))
 
