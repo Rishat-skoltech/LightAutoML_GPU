@@ -143,7 +143,7 @@ class LinearLBFGS_gpu(TabularMLAlgo_gpu):
         st = perf_counter()
         model = self._infer_params()
         model.model = model.model.to(f'cuda:{dev_id}')
-        print(perf_counter() - st, "transfering model")
+        print(perf_counter() - st, "transfering model and initing params")
         st = perf_counter()
         model.fit(train_data, train_target, train_weights, valid_data, valid_target, valid_weights, dev_id)
         print(perf_counter() - st, "fit data")

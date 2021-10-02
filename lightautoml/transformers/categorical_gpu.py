@@ -3,8 +3,6 @@
 from itertools import combinations
 from typing import Optional, Union, List, Sequence, cast, Tuple
 
-from time import perf_counter
-
 import numpy as np
 import cupy as cp
 import pandas as pd
@@ -699,21 +697,14 @@ class TargetEncoder_gpu(LAMLTransformer):
             DaskCudf - target encoded features.
 
         """
-        st = perf_counter()
         super().fit(dataset)
-        print(perf_counter() - st, " superfit")
-        st = perf_counter()
         score_func = self.dask_binary_score_func if dataset.task.name == 'binary'\
                                                else self.dask_reg_score_func
 
         alphas = cp.array(self.alphas)[cp.newaxis, :]
         self.encodings = []
-        print(perf_counter() - st, "preps")
-        st = perf_counter()
 
         prior = dataset.target.mean().compute()
-        print(perf_counter() - st, "prior")
-        st = perf_counter()
 
         target_name = dataset.target.name
         folds_name = dataset.folds.name
@@ -721,8 +712,6 @@ class TargetEncoder_gpu(LAMLTransformer):
         daskcudf_data = dataset.data.persist()#copy(dataset.data)
         daskcudf_data[folds_name] = dataset.folds
         daskcudf_data[target_name] = dataset.target
-        print(perf_counter() - st, "persisting")
-        st = perf_counter()
 
         n_folds = int(daskcudf_data[folds_name].max().compute() + 1)
 
@@ -731,15 +720,9 @@ class TargetEncoder_gpu(LAMLTransformer):
         f_count = daskcudf_data.map_partitions(self.dask_add_at_1d, folds_name, 1, n_folds,
                               meta=cudf.DataFrame(columns=np.arange(n_folds), dtype='i8')).sum().compute().values
 
-        print(perf_counter() - st, "two map partitions with dask add")
-        st = perf_counter()
         folds_prior = (f_sum.sum() - f_sum) / (f_count.sum() - f_count)
-        print(perf_counter() - st, "folds_prior")
-        st = perf_counter()
 
         oof_feats = daskcudf_data[dataset.features]#.persist()
-        print(perf_counter() - st, "before cycling")
-        st = perf_counter()
 
         for n in range(oof_feats.shape[1]):
             vec_col = daskcudf_data.columns[n]
@@ -785,15 +768,9 @@ class TargetEncoder_gpu(LAMLTransformer):
 
             self.encodings.append(enc)
 
-        print(perf_counter() - st, "after cycling")
-        st = perf_counter()
         output = dataset.empty()
         self.output_role = NumericRole(cp.float32, prob=output.task.name == 'binary')
-        print(perf_counter() - st, "output")
-        st = perf_counter()
         output.set_data(oof_feats.persist(), self.features, self.output_role)
-        print(perf_counter() - st, "setting data")
-        st = perf_counter()
         return output
 
     def fit_transform_cupy(self, dataset: GpuNumericalDataset) -> CupyDataset:
