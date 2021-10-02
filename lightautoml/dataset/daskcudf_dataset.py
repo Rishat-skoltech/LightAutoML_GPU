@@ -144,8 +144,9 @@ class DaskCudfDataset(CudfDataset):
         Returns:
             Same dataset in class:`CudfDataset` format.
         """
-
-        data = self.data.compute()
+        data = None
+        if self.data is not None:
+            data = self.data.compute()
         roles = self.roles
         task = self.task
 

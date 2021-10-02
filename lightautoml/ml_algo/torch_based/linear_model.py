@@ -203,6 +203,9 @@ class TorchBasedLinearEstimator:
             Tuple (numeric_features, cat_features).
 
         """
+        #print(data)
+        #print(data.shape)
+
         if 0 < len(self.categorical_idx) < data.shape[1]:
             data_cat = torch.from_numpy(data[:, self.categorical_idx].astype(np.int64))
             data = torch.from_numpy(data[:, np.setdiff1d(np.arange(data.shape[1]), self.categorical_idx)])

@@ -10,7 +10,8 @@ from ..utils import infer_gib
 from ..utils_gpu import infer_gib_gpu
 
 from ..common_metric import _valid_str_metric_names
-from ..common_metric_gpu import _valid_str_metric_names_gpu
+from ..common_metric_gpu import _valid_str_metric_names_gpu,\
+                                _valid_str_metric_names_mgpu
 
 from .base import Loss, MetricFunc
 
@@ -317,8 +318,12 @@ class TORCHLoss(Loss):
         if type(metric) is str:
             if self.device == 'cpu':
                 metric_dict = _valid_str_metric_names[task_name]
-            else:
+            elif self.device == 'gpu':
                 metric_dict = _valid_str_metric_names_gpu[task_name]
+            elif self.device == 'mgpu':
+                metric_dict = _valid_str_metric_names_mgpu[task_name]
+            else:
+                raise NotImplementedError("Invalid task name for metric")
             self.metric_func = self.metric_wrapper(metric_dict[metric], greater_is_better, metric_params)
 
             self.metric_name = metric

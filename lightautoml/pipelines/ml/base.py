@@ -10,7 +10,7 @@ from ...dataset.utils import concatenate
 from ...ml_algo.base import MLAlgo
 from ...ml_algo.tuning.base import ParamsTuner, DefaultTuner
 from ...ml_algo.utils import tune_and_fit_predict
-
+import cudf
 
 class MLPipeline:
     """Single ML pipeline.
@@ -110,11 +110,26 @@ class MLPipeline:
         # train and apply pre selection
         train_valid = train_valid.apply_selector(self.pre_selection)
         # apply features pipeline
+        #if isinstance(train_valid.train.data, (cudf.DataFrame, cudf.Series)):
+        #    print(train_valid.train.data)
+        #else:
+        #    print(train_valid.train.data.compute())
+        #print("##############")
         train_valid = train_valid.apply_feature_pipeline(self.features_pipeline)
 
         # train and apply post selection
+        #if isinstance(train_valid.train.data, (cudf.DataFrame, cudf.Series)):
+        #    print(train_valid.train.data)
+        #else:
+        #    print(train_valid.train.data.compute())
+        #print("#################")
         train_valid = train_valid.apply_selector(self.post_selection)
 
+        #if isinstance(train_valid.train.data, (cudf.DataFrame, cudf.Series)):
+        #    print(train_valid.train.data)
+        #else:
+        #    print(train_valid.train.data.compute())
+        #print("#################")
         predictions = []
 
         for ml_algo, param_tuner, force_calc in zip(self._ml_algos, self.params_tuners, self.force_calc):

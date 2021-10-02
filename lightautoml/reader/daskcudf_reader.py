@@ -66,24 +66,23 @@ class DaskCudfReader(CudfReader):
         super().__init__(task, *args, **kwargs)
 
     def _prepare_data_and_target(self, train_data, **kwargs):
-        output_data = None
 
         #if isinstance(train_data, (pd.DataFrame, pd.Series)):
         if type(train_data) == pd.DataFrame or type(train_data) == pd.Series: 
-            output_data = cudf.from_pandas(train_data, nan_as_null=False)
-            output_data = dask_cudf.from_cudf(output_data, npartitions=self.npartitions)
-            kwargs['target'] = output_data[self.target]
+            train_data = cudf.from_pandas(train_data, nan_as_null=False)
+            train_data = dask_cudf.from_cudf(train_data, npartitions=self.npartitions)
+            kwargs['target'] = train_data[self.target]
         #elif isinstance(train_data, (cudf.DataFrame, cudf.Series)):
         elif type(train_data) == cudf.DataFrame or type(train_data) == cudf.Series:
-            output_data = dask_cudf.from_cudf(output_data, npartitions=self.npartitions)
-            kwargs['target'] = output_data[self.target]
+            train_data = dask_cudf.from_cudf(train_data, npartitions=self.npartitions)
+            kwargs['target'] = train_data[self.target]
         elif type(train_data) == dask_cudf.DataFrame or type(train_data) == dask_cudf.Series:
         #elif isinstance(train_data, (dask_cudf.DataFrame, dask_cudf.Series)):
-            output_data = train_data
+            pass
         else:
             raise NotImplementedError("Input data type is not supported")
         kwargs['target'] = self._create_target(kwargs['target'])
-        return output_data.persist(), kwargs
+        return train_data.persist(), kwargs
 
     def fit_read(self, train_data: DataFrame, features_names: Any = None,
                  roles: UserDefinedRolesDict = None, roles_parsed: bool = False,
@@ -253,6 +252,16 @@ class DaskCudfReader(CudfReader):
             Dataset with new columns.
 
         """
+
+        if type(data) == pd.DataFrame or type(data) == pd.Series: 
+            data = cudf.from_pandas(data, nan_as_null=False)
+            data = dask_cudf.from_cudf(data, npartitions=self.npartitions)
+        elif type(data) == cudf.DataFrame or type(data) == cudf.Series:
+            data = dask_cudf.from_cudf(data, npartitions=self.npartitions)
+        elif type(data) == dask_cudf.DataFrame or type(data) == dask_cudf.Series:
+            pass
+        else:
+            raise NotImplementedError("Input data type is not supported")
 
         kwargs = {}
         if add_array_attrs:

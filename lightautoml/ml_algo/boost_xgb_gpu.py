@@ -37,6 +37,7 @@ class BoostXGB(OptunaTunableMixin, TabularMLAlgo_gpu, ImportanceEstimator):
     timer: :class:`~lightautoml.utils.timer.Timer` instance or ``None``.
 
     """
+    _parallel_folds: bool = False
     _name: str = 'XGB'
 
     _default_params = {
@@ -45,19 +46,13 @@ class BoostXGB(OptunaTunableMixin, TabularMLAlgo_gpu, ImportanceEstimator):
         'task': 'train',
         "learning_rate": 0.05,
         "max_leaves": 128,
-        "feature_fraction": 0.7,
-        "bagging_fraction": 0.7,
-        'bagging_freq': 1,
         "max_depth": 0,
         "verbosity": 0,
         "reg_alpha": 1,
         "reg_lambda": 0.0,
-        "min_split_gain": 0.0,
-        'zero_as_missing': False,
-        'num_threads': 4,
+        "gamma": 0.0,
         'max_bin': 255,
-        'min_data_in_bin': 3,
-        'num_trees': 3000,
+        'n_estimators': 3000,
         'early_stopping_rounds': 100,
         'random_state': 42
     }
@@ -73,7 +68,7 @@ class BoostXGB(OptunaTunableMixin, TabularMLAlgo_gpu, ImportanceEstimator):
         # TODO: Check how it works with custom tasks
         params = copy(self.params)
         early_stopping_rounds = params.pop('early_stopping_rounds')
-        num_trees = params.pop('num_trees')
+        num_trees = params.pop('n_estimators')
 
         root_logger = logging.getLogger()
         level = root_logger.getEffectiveLevel()
@@ -86,18 +81,8 @@ class BoostXGB(OptunaTunableMixin, TabularMLAlgo_gpu, ImportanceEstimator):
             verbose_eval = 10
 
         # get objective params
-        ###########################################
-        ##########DON"T FORGET THIS################
-        ###########################################
-        loss = self.task.losses['lgb']
-
-        if self.task.name == 'multiclass':
-            params['objective'] = 'multi:softmax'#loss.fobj_name
-        elif self.task.name == 'binary':
-            params['objective'] = 'binary:logistic'
-        elif self.task.name == 'reg':
-            params['objective'] = 'reg:squarederror'
-
+        loss = self.task.losses['xgb_gpu']
+        params['objective'] = loss.fobj_name
         fobj = loss.fobj
 
         # get metric params
@@ -138,9 +123,7 @@ class BoostXGB(OptunaTunableMixin, TabularMLAlgo_gpu, ImportanceEstimator):
         if task == 'reg':
             suggested_params = {
                 "learning_rate": 0.05,
-                "max_leaves": 32,
-                "feature_fraction": 0.9,
-                "bagging_fraction": 0.9
+                "max_leaves": 32
             }
 
         if rows_num <= 10000:
@@ -187,7 +170,7 @@ class BoostXGB(OptunaTunableMixin, TabularMLAlgo_gpu, ImportanceEstimator):
             suggested_params['reg_alpha'] = 1 if task == 'reg' else 1
 
         suggested_params['learning_rate'] = init_lr
-        suggested_params['num_trees'] = ntrees
+        suggested_params['n_estimators'] = ntrees
         suggested_params['early_stopping_rounds'] = es
 
         return suggested_params
@@ -209,10 +192,10 @@ class BoostXGB(OptunaTunableMixin, TabularMLAlgo_gpu, ImportanceEstimator):
 
         trial_values = copy(suggested_params)
 
-        trial_values['feature_fraction'] = trial.suggest_uniform(
-            name='feature_fraction',
-            low=0.5,
-            high=1.0,
+        trial_values['max_depth'] = trial.suggest_int(
+            name='max_depth',
+            low=3,
+            high=7
         )
 
         trial_values['max_leaves'] = trial.suggest_int(
@@ -222,14 +205,8 @@ class BoostXGB(OptunaTunableMixin, TabularMLAlgo_gpu, ImportanceEstimator):
         )
 
         if estimated_n_trials > 30:
-            trial_values['bagging_fraction'] = trial.suggest_uniform(
-                name='bagging_fraction',
-                low=0.5,
-                high=1.0,
-            )
-
-            trial_values['min_sum_hessian_in_leaf'] = trial.suggest_loguniform(
-                name='min_sum_hessian_in_leaf',
+            trial_values['min_child_weight'] = trial.suggest_loguniform(
+                name='min_child_weight',
                 low=1e-3,
                 high=10.0,
             )
@@ -248,7 +225,7 @@ class BoostXGB(OptunaTunableMixin, TabularMLAlgo_gpu, ImportanceEstimator):
 
         return trial_values
 
-    def fit_predict_single_fold(self, train: TabularDatasetGpu, valid: TabularDatasetGpu, part_id: int = None, dev_id: int = None) -> Tuple[xgb.Booster, np.ndarray]:
+    def fit_predict_single_fold(self, train: TabularDatasetGpu, valid: TabularDatasetGpu, part_id: int = None, dev_id: int = 0) -> Tuple[xgb.Booster, np.ndarray]:
         """Implements training and prediction on single fold.
 
         Args:
@@ -282,15 +259,15 @@ class BoostXGB(OptunaTunableMixin, TabularMLAlgo_gpu, ImportanceEstimator):
             valid_data = valid_data.compute()
             #valid_data = valid_data.get_partition(part_id).compute()
         params, num_trees, early_stopping_rounds, verbose_eval, fobj, feval = self._infer_params()
-        train_target, train_weight = self.task.losses['lgb'].fw_func(train_target, train_weights)
-        valid_target, valid_weight = self.task.losses['lgb'].fw_func(valid_target, valid_weights)
+        train_target, train_weight = self.task.losses['xgb_gpu'].fw_func(train_target, train_weights)
+        valid_target, valid_weight = self.task.losses['xgb_gpu'].fw_func(valid_target, valid_weights)
         xgb_train = xgb.DMatrix(train_data, label=train_target, weight=train_weight)
         xgb_valid = xgb.DMatrix(valid_data, label=valid_target, weight=valid_weight)
         model = xgb.train(params, xgb_train, num_boost_round=num_trees, evals=[(xgb_train, 'train'), (xgb_valid, 'valid')],
                           obj=fobj, feval=feval, early_stopping_rounds=early_stopping_rounds, verbose_eval=verbose_eval
                           )
         val_pred = model.inplace_predict(valid_data)
-        val_pred = self.task.losses['lgb'].bw_func(val_pred)
+        val_pred = self.task.losses['xgb_gpu'].bw_func(val_pred)
         return model, val_pred
 
     def predict_single_fold(self, model: xgb.Booster, dataset: TabularDatasetGpu, part_id: int = None) -> np.ndarray:
@@ -310,7 +287,7 @@ class BoostXGB(OptunaTunableMixin, TabularMLAlgo_gpu, ImportanceEstimator):
             dataset_data = dataset_data.compute()
             #dataset_data = dataset_data.get_partition(part_id).compute()
 
-        pred = self.task.losses['lgb'].bw_func(model.inplace_predict(dataset_data))
+        pred = self.task.losses['xgb_gpu'].bw_func(model.inplace_predict(dataset_data))
 
         return pred
 
@@ -345,6 +322,8 @@ class BoostXGB(OptunaTunableMixin, TabularMLAlgo_gpu, ImportanceEstimator):
         
 class BoostXGB_dask(BoostXGB):
 
+    _parallel_folds: bool = False
+
     def __init__(self, client, *args, **kwargs):
 
         self.client = client
@@ -364,7 +343,7 @@ class BoostXGB_dask(BoostXGB):
                 setattr(new_inst, k, deepcopy(v, memo))
         return new_inst
         
-    def fit_predict_single_fold(self, train: DaskCudfDataset, valid: DaskCudfDataset, part_id: int = None, dev_id: int = None) -> Tuple[dxgb.Booster, np.ndarray]:
+    def fit_predict_single_fold(self, train: DaskCudfDataset, valid: DaskCudfDataset, part_id: int = None, dev_id: int = 0) -> Tuple[dxgb.Booster, np.ndarray]:
         """Implements training and prediction on single fold.
 
         Args:
@@ -378,8 +357,8 @@ class BoostXGB_dask(BoostXGB):
 
         params, num_trees, early_stopping_rounds, verbose_eval, fobj, feval = self._infer_params()
 
-        train_target, train_weight = self.task.losses['lgb'].fw_func(train.target, train.weights)
-        valid_target, valid_weight = self.task.losses['lgb'].fw_func(valid.target, valid.weights)
+        train_target, train_weight = self.task.losses['xgb_mgpu'].fw_func(train.target, train.weights)
+        valid_target, valid_weight = self.task.losses['xgb_mgpu'].fw_func(valid.target, valid.weights)
 
         xgb_train = dxgb.DaskDeviceQuantileDMatrix(self.client, train.data, label=train_target, weight=train_weight)
         xgb_valid = dxgb.DaskDeviceQuantileDMatrix(self.client, valid.data, label=valid_target, weight=valid_weight)
@@ -388,7 +367,7 @@ class BoostXGB_dask(BoostXGB):
                           )
 
         val_pred = dxgb.inplace_predict(self.client, model, valid.data)
-        val_pred = self.task.losses['lgb'].bw_func(val_pred)
+        val_pred = self.task.losses['xgb_mgpu'].bw_func(val_pred)
 
         return model, val_pred
 
@@ -403,7 +382,7 @@ class BoostXGB_dask(BoostXGB):
             Predicted target values.
 
         """
-        pred = self.task.losses['lgb'].bw_func(dxgb.inplace_predict(self.client, model, dataset.data))
+        pred = self.task.losses['xgb_mgpu'].bw_func(dxgb.inplace_predict(self.client, model, dataset.data))
 
         return pred
 

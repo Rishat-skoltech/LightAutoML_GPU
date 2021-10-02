@@ -520,7 +520,7 @@ class StandardScaler_gpu(LAMLTransformer):
         output = dataset.empty()
 
         # TODO: CHECK IF np.float32 OK OR USE cp.float32 INSTEAD
-        output.set_data(data, self.features, NumericRole(np.float32))
+        output.set_data(new_data, self.features, NumericRole(np.float32))
         return output
 
     def fit(self, dataset: GpuDataset):

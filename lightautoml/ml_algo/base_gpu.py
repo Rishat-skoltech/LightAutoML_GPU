@@ -11,6 +11,8 @@ import dask_cudf
 import dask.array as da
 import dask.dataframe as dd
 
+import torch
+
 from .base import TabularMLAlgo
 from joblib import Parallel, delayed
 
@@ -24,12 +26,16 @@ from ..dataset.roles import NumericRole
 from ..utils.logging import get_logger
 from ..utils.timer import TaskTimer, PipelineTimer
 
+import torch
+
 logger = get_logger(__name__)
 TabularDatasetGpu = Union[CupyDataset, CudfDataset, DaskCudfDataset]
 
 class TabularMLAlgo_gpu(TabularMLAlgo):
     """Machine learning algorithms that accepts cupy arrays as input."""
     _name: str = 'TabularAlgo_gpu'
+    _parallel_folds: bool = True
+
 
     def fit_predict(self, train_valid_iterator: TrainValidIterator) -> CupyDataset:
         """Fit and then predict accordig the strategy that uses train_valid_iterator.
@@ -46,6 +52,7 @@ class TabularMLAlgo_gpu(TabularMLAlgo):
             Dataset with predicted values.
 
         """
+
         logger.info('Start fitting {} ...'.format(self._name))
         self.timer.start()
         assert self.is_fitted is False, 'Algo is already fitted'
@@ -57,28 +64,27 @@ class TabularMLAlgo_gpu(TabularMLAlgo):
         self._features = train_valid_iterator.features
         # get metric and loss if None
         self.task = train_valid_iterator.train.task
-
         # get empty validation data to write prediction
         # TODO: Think about this cast
         val_data = train_valid_iterator.get_validation_data().empty()
-        preds_ds = None
-        if type(val_data) == DaskCudfDataset:
-            preds_ds = cast(DaskCudfDataset, val_data)
-        else:
-            preds_ds = cast(CupyDataset, val_data.to_cupy())
-        ########################################################
 
+        #preds_ds = None
+        #if type(val_data) == DaskCudfDataset:
+        #    preds_ds = cast(DaskCudfDataset, val_data)
+        #else:
+        preds_ds = cast(CupyDataset, val_data.to_cupy())
+        ########################################################
         outp_dim = 1
         if self.task.name == 'multiclass':
             if type(val_data) == DaskCudfDataset:
-                outp_dim = int(preds_ds.target.max().compute()+1)
+                outp_dim = int(val_data.target.max().compute()+1)
             else:
-                outp_dim = int(cp.max(preds_ds.target) + 1)
+                outp_dim = int(cp.max(val_data.target) + 1)
         # save n_classes to infer params
         self.n_classes = outp_dim
 
 
-        preds_arr = None
+        '''preds_arr = None
         counter_arr = None
         
         def zeros_like_daskcudf(data, dim):
@@ -90,72 +96,80 @@ class TabularMLAlgo_gpu(TabularMLAlgo):
             dat = train_valid_iterator.get_validation_data().data
             preds_arr = dat.map_partitions(zeros_like_daskcudf, outp_dim, meta=cudf.DataFrame(columns=np.arange(outp_dim)).astype(cp.float32)).to_dask_array(lengths=True).persist()
             counter_arr = dat.map_partitions(zeros_like_daskcudf, 1, meta=cudf.DataFrame(columns=[0]).astype(cp.float32)).to_dask_array(lengths=True).persist()
-        else:
-            preds_arr = cp.zeros((train_valid_iterator.get_validation_data().shape[0], outp_dim), dtype=cp.float32)
-            counter_arr = cp.zeros((train_valid_iterator.get_validation_data().shape[0], 1), dtype=cp.float32)
+        else:'''
+        preds_arr = cp.zeros((train_valid_iterator.get_validation_data().shape[0], outp_dim), dtype=cp.float32)
+        counter_arr = cp.zeros((train_valid_iterator.get_validation_data().shape[0], 1), dtype=cp.float32)
 
-        def perform_iterations(fit_predict_single_fold, train_valid, ind, dev_id):
+        if self._parallel_folds:
+
+            def perform_iterations(fit_predict_single_fold, train_valid, ind, dev_id):
+                models = []
+                preds = []
+                #cp.cuda.runtime.setDevice(dev_id)
+                #torch.cuda.set_device(f'cuda:{dev_id}')
+                for n in ind:
+                    (idx, train, valid) = train_valid[n]
+                    logger.info('\n===== Start working with fold {} for {} (par) =====\n'.format(n,self._name))
+                    model, pred = fit_predict_single_fold(train, valid, dev_id)
+                    models.append(model)
+                    preds.append(pred)
+                return models, preds
+
+            n_parts = torch.cuda.device_count()
+            
+            print("Number of GPUs:", n_parts)
+            n_folds = len(train_valid_iterator)
+            inds = np.array_split(np.arange(n_folds), n_parts)
+            inds = [x for x in inds if len(x) > 0]
+            device_ids = np.arange(n_parts)#np.zeros(n_parts, dtype='int')
+            res = None
             models = []
             preds = []
-            #cp.cuda.runtime.setDevice(dev_id)
-            for (n, (idx, train, valid)) in zip(ind, train_valid):
-                logger.info('\n===== Start working with fold {} for {} =====\n'.format(n, self._name))
+            #with Parallel(n_jobs=n_parts, prefer='processes', 
+            #              backend='loky', max_nbytes=None) as p:
+            with Parallel(n_jobs=n_parts, prefer='threads') as p: 
+                res = p(delayed(perform_iterations)
+                (self.fit_predict_single_fold,
+                train_valid_iterator, ind, device_id) 
+                for (ind, device_id) in zip(inds, device_ids))
 
-                self.timer.set_control_point()
-                model, pred = fit_predict_single_fold(train, valid, n, dev_id)
-                models.append(model)
-                preds.append(pred)
-            return models, preds
 
-        need_orig = True
-        if type(val_data) == DaskCudfDataset:
-            train_valids = [x for x in train_valid_iterator]
-            if len(train_valids) > 1:
-                n_parts = 1#val_data.n_partitions
-                n_folds = len(train_valids)
-                inds = np.array_split(np.arange(n_folds), n_parts)
-                inds = [x for x in inds if len(x) > 0]
-                device_ids = np.arange(n_parts)
-                res = None
-                with Parallel(n_jobs=n_parts, prefer='processes', 
-                              backend='loky', max_nbytes=None) as p:
-                    [(models, preds)] = p(delayed(perform_iterations)
-                    (self.fit_predict_single_fold, 
-                    train_valids[ind[0]:ind[-1]+1], ind, device_id) 
-                    for (ind, device_id) in zip(inds, device_ids))
+            for elem in res:
+                 models.extend(elem[0])
+                 preds.extend(elem[1])
+                 del elem
 
-                self.models = models
-                #THIS RELIES ON ASSUMPTION THAT PREDS ARE ORDERED CORRECTLY
-                for n, (idx, _, _) in enumerate(train_valids):
-                    if isinstance(preds[n], (dask_cudf.DataFrame, dask_cudf.Series, dd.DataFrame, dd.Series)):
-                        preds_arr[idx] += preds[n]\
-                            .to_dask_array(lengths=True)\
-                            .reshape(preds[n].shape[0].compute(), -1)
-                        counter_arr[idx] += 1
-                    else:
-                        preds_arr[idx] += preds[n].reshape((preds[n].shape[0], -1))
-                        counter_arr[idx] += 1
-                need_orig = False
-                        
-        if need_orig:
+            self.models = models
+            #THIS RELIES ON ASSUMPTION THAT PREDS ARE ORDERED CORRECTLY
+            #WHICH THEY SEEM TO BE
+            for n, (idx, _, _) in enumerate(train_valid_iterator):
+                if isinstance(preds[n], (dask_cudf.DataFrame, dask_cudf.Series, dd.DataFrame, dd.Series)):
+                    preds_arr[idx] += preds[n]\
+                        .compute().values\
+                        .reshape(preds[n].shape[0].compute(), -1)
+                    counter_arr[idx] += 1
+                else:
+                    preds_arr[idx] += preds[n].reshape((preds[n].shape[0], -1))
+                    counter_arr[idx] += 1
+        else:
             # TODO: Make parallel version later
             for n, (idx, train, valid) in enumerate(train_valid_iterator):
-                logger.info('\n===== Start working with fold {} for {} =====\n'.format(n, self._name))
+                logger.info('\n===== Start working with fold {} for {} (orig) =====\n'.format(n, self._name))
 
                 self.timer.set_control_point()
-                model, pred = self.fit_predict_single_fold(train, valid)
+                model, pred = self.fit_predict_single_fold(train, valid, 0)
                 self.models.append(model)
 
                 if isinstance(pred, (dask_cudf.DataFrame, dask_cudf.Series, dd.DataFrame, dd.Series)):
 
                     if idx is not None:
                         preds_arr[idx] += pred\
-                            .to_dask_array(lengths=True)\
+                            .compute().values\
                             .reshape(pred.shape[0].compute(), -1)
                         counter_arr[idx] += 1
                     else:
                         preds_arr += pred\
-                            .to_dask_array(lengths=True)\
+                            .compute().values\
                             .reshape(pred.shape[0].compute(), -1)
                         counter_arr += 1
 
@@ -173,18 +187,18 @@ class TabularMLAlgo_gpu(TabularMLAlgo):
             logger.debug('Time history {0}. Time left {1}'\
                 .format(self.timer.get_run_results(), self.timer.time_left))
 
-        if type(val_data) == DaskCudfDataset:
+        '''if type(val_data) == DaskCudfDataset:
             preds_arr /= da.where(counter_arr == 0, 1, counter_arr)
             preds_arr = da.where(counter_arr == 0, cp.nan, preds_arr)
 
             cols = [self._name + "_" + str(x) for x in np.arange(self.n_classes)]
             preds_arr = dd.from_dask_array(preds_arr, columns=cols, meta=cudf.DataFrame(columns=cols)).persist()
             
-        else:
-            preds_arr /= cp.where(counter_arr == 0, 1, counter_arr)
-            preds_arr = cp.where(counter_arr == 0, cp.nan, preds_arr)
-        preds_ds = self._set_prediction(preds_ds, preds_arr)
+        else:'''
+        preds_arr /= cp.where(counter_arr == 0, 1, counter_arr)
+        preds_arr = cp.where(counter_arr == 0, cp.nan, preds_arr)
 
+        preds_ds = self._set_prediction(preds_ds, preds_arr)
         logger.info('{} fitting and predicting completed'.format(self._name))
         return preds_ds
 
@@ -201,28 +215,36 @@ class TabularMLAlgo_gpu(TabularMLAlgo):
         
         assert self.models != [], 'Should be fitted first.'
 
-        if type(dataset) == DaskCudfDataset:
+        '''if type(dataset) == DaskCudfDataset:
             preds_ds = dataset.empty()
             preds_arr = None
-        else:
-            preds_ds = dataset.empty().to_cupy()
-            preds_arr = None
+        else:'''
+        preds_ds = dataset.empty().to_cupy()
+        preds_arr = None
 
         for model in self.models:
-            if preds_arr is None:
-                preds_arr = self.predict_single_fold(model, dataset)
-            else:
-                preds_arr += self.predict_single_fold(model, dataset)
 
-        if type(dataset) == DaskCudfDataset:
-            preds_arr = preds_arr.to_dask_array(lengths=True).persist()
+            pred = self.predict_single_fold(model, dataset)
+
+            if isinstance(pred, (dask_cudf.DataFrame, dd.DataFrame)):
+                pred = pred.compute().values
+            elif isinstance(pred, cudf.DataFrame):
+                pred = pred.values
+
+            if preds_arr is None:
+                preds_arr = pred
+            else:
+                preds_arr += pred
+
+        '''if type(dataset) == DaskCudfDataset:
+            preds_arr = preds_arr.to_dask_array(lengths=True).persist()'''
 
         preds_arr /= len(self.models)
         preds_arr = preds_arr.reshape((preds_arr.shape[0], -1))
 
-        if type(dataset) == DaskCudfDataset:
+        '''if type(dataset) == DaskCudfDataset:
             cols = [self._name + "_" + str(x) for x in np.arange(self.n_classes)]
-            preds_arr = dd.from_dask_array(preds_arr, columns=cols, meta=cudf.DataFrame(columns=cols)).persist()
+            preds_arr = dd.from_dask_array(preds_arr, columns=cols, meta=cudf.DataFrame(columns=cols)).persist()'''
 
         preds_ds = self._set_prediction(preds_ds, preds_arr)
 

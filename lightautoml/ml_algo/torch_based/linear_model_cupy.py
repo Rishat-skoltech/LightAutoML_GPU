@@ -5,6 +5,7 @@ from typing import Sequence, Callable, Optional, Union
 
 import numpy as np
 import cupy as cp
+import cudf
 
 import torch
 from scipy import sparse
@@ -197,7 +198,7 @@ class TorchBasedLinearEstimator:
     #    data = convert_scipy_sparse_to_torch_float(data)
     #    return data, None
 
-    def _prepare_data_dense(self, data: cp.ndarray, dev_id: int = 0):
+    def _prepare_data_dense(self, data, dev_id: int = 0):
         """Prepare dense matrix.
 
         Split categorical and numeric features.
@@ -209,13 +210,19 @@ class TorchBasedLinearEstimator:
             Tuple (numeric_features, cat_features).
 
         """
+        '''if isinstance(data, (cudf.DataFrame, cudf.Series)):
+            print(data.values)
+            print(data.values.shape)
+        else:
+            print(data.compute().values)
+            print(data.compute().values.shape)'''
         #DO if type()== DON"T FORGET
         if 0 < len(self.categorical_idx) < data.shape[1]:
             # noinspection PyTypeChecker
             #why cp.float32? because admm_cuda not implemented for 'Int'
-            data_cat = torch.as_tensor(data[self.categorical_idx].values.astype(cp.int32), device='cuda')
+            data_cat = torch.as_tensor(data[self.categorical_idx].values.astype(cp.int32), device=f'cuda:{dev_id}')
             
-            data = torch.as_tensor(data[data.columns.difference(self.categorical_idx)].values.astype(cp.float32), device='cuda')
+            data = torch.as_tensor(data[data.columns.difference(self.categorical_idx)].values.astype(cp.float32), device=f'cuda:{dev_id}')
             return data, data_cat
 
         elif len(self.categorical_idx) == 0:
@@ -239,7 +246,6 @@ class TorchBasedLinearEstimator:
 
         """
         self.model.train()
-
         opt = optim.LBFGS(
             self.model.parameters(),
             lr=0.1,
@@ -253,14 +259,12 @@ class TorchBasedLinearEstimator:
 
         def closure():
             opt.zero_grad()
-
             output = self.model(data, data_cat)
             loss = self._loss_fn(y, output, weights, c)
             if loss.requires_grad:
                 loss.backward()
             results.append(loss.item())
             return loss
-
         opt.step(closure)
 
     def _loss_fn(self, y_true: torch.Tensor, y_pred: torch.Tensor, weights: Optional[torch.Tensor], c: float) -> torch.Tensor:
@@ -277,7 +281,6 @@ class TorchBasedLinearEstimator:
 
         """
         # weighted loss
-
         loss = self.loss(y_true, y_pred, sample_weight=weights)
 
         n = y_true.shape[0]
@@ -285,9 +288,7 @@ class TorchBasedLinearEstimator:
             n = weights.sum()
 
         all_params = torch.cat([y.view(-1) for (x, y) in self.model.named_parameters() if x != 'bias'])
-
         penalty = torch.norm(all_params, 2).pow(2) / 2 / n
-
         return loss + .5 * penalty / c
 
     def fit(self, data: cp.ndarray, y: cp.ndarray, weights: Optional[np.ndarray] = None,
@@ -309,7 +310,6 @@ class TorchBasedLinearEstimator:
         assert self.model is not None, 'Model should be defined'
         #TYPES ARE CUDF
         data, data_cat = self._prepare_data(data, dev_id)
-
         #if types are cudf
         if y is not None:
             y = y.values
@@ -327,15 +327,12 @@ class TorchBasedLinearEstimator:
         y = torch.as_tensor(y.astype(cp.float32), device=f'cuda:{dev_id}')
         if weights is not None:
             weights = torch.as_tensor(weights.astype(cp.float32), device=f'cuda:{dev_id}')
-
         if data_val is None and y_val is None:
             logger.warning('Validation data should be defined. No validation will be performed and C = 1 will be used')
             self._optimize(data, data_cat, y, weights, 1.)
 
             return self
-
         data_val, data_val_cat = self._prepare_data(data_val, dev_id)
-       
         best_score = -np.inf
         best_model = None
         es = 0
@@ -344,7 +341,6 @@ class TorchBasedLinearEstimator:
             self._optimize(data, data_cat, y, weights, c)
 
             val_pred = self._score(data_val, data_val_cat)
-            
             score = self.metric(y_val, val_pred, weights_val)
             
             logger.info('Linear model: C = {0} score = {1}'.format(c, score))
@@ -375,13 +371,14 @@ class TorchBasedLinearEstimator:
             Predicted target values.
 
         """
+        preds = None
         with torch.set_grad_enabled(False):
             self.model.eval()
             preds = cp.asarray(self.model(data, data_cat))
 
         return preds
 
-    def predict(self, data: cp.ndarray) -> cp.ndarray:
+    def predict(self, data: cp.ndarray, dev_id: int = 0) -> cp.ndarray:
         """Inference phase.
 
         Args:
@@ -391,7 +388,7 @@ class TorchBasedLinearEstimator:
             Predicted target values.
 
         """
-        data, data_cat = self._prepare_data(data)
+        data, data_cat = self._prepare_data(data, dev_id)
 
         return self._score(data, data_cat)
 
@@ -430,7 +427,7 @@ class TorchBasedLogisticRegression(TorchBasedLinearEstimator):
         super().__init__(data_size, categorical_idx, embed_sizes, output_size, cs, max_iter, tol, early_stopping, loss, metric)
         self.model = _model(self.data_size - len(self.categorical_idx), self.embed_sizes, self.output_size).cuda()
 
-    def predict(self, data: cp.ndarray) -> cp.ndarray:
+    def predict(self, data: cp.ndarray, dev_id: int = 0) -> cp.ndarray:
         """Inference phase.
 
         Args:
@@ -440,7 +437,7 @@ class TorchBasedLogisticRegression(TorchBasedLinearEstimator):
             predicted target values.
 
         """
-        pred = super().predict(data)
+        pred = super().predict(data, dev_id)
         if self._binary:
             pred = pred[:, 0]
         return pred
@@ -472,7 +469,7 @@ class TorchBasedLinearRegression(TorchBasedLinearEstimator):
         super().__init__(data_size, categorical_idx, embed_sizes, output_size, cs, max_iter, tol, early_stopping, loss, metric)
         self.model = CatRegression(self.data_size - len(self.categorical_idx), self.embed_sizes, self.output_size).cuda()
 
-    def predict(self, data: cp.ndarray) -> cp.ndarray:
+    def predict(self, data: cp.ndarray, dev_id: int = 0) -> cp.ndarray:
         """Inference phase.
 
         Args:
@@ -482,4 +479,4 @@ class TorchBasedLinearRegression(TorchBasedLinearEstimator):
             predicted target values.
 
         """
-        return super().predict(data)[:, 0]
+        return super().predict(data, dev_id)[:, 0]

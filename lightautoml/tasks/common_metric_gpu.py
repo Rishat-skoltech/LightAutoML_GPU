@@ -10,44 +10,41 @@ import cupy as cp
 from cuml.metrics import roc_auc_score, log_loss, accuracy_score
 
 from dask_ml.metrics import accuracy_score as dask_accuracy_score
+from dask_ml.metrics import mean_absolute_error as dask_mean_absolute_error
 #from dask_ml.metrics import r2_score as dask_r2_score
 
 from cuml.metrics.regression import mean_squared_error, r2_score, mean_absolute_error, mean_squared_log_error
 
-def mean_absolute_error_mgpu(y_true: da.Array, y_pred: da.Array,
-                             sample_weight: Optional[da.Array] = None) -> float:
-
-    output = da.map_blocks(mean_absolute_error, y_true, y_pred,
-                           sample_weight=sample_weight,
-                           meta=cp.array((), dtype=cp.float32))
-    res = output.compute().mean()
-    return res
-
 def log_loss_mgpu(y_true: da.Array, y_pred: da.Array,
                              sample_weight: Optional[da.Array] = None,
                              eps: float = 1e-15) -> float:
-
-    output = log_loss(y_true.compute(), y_pred.compute(),
-                            sample_weight=sample_weight, eps=eps)
-    #output = da.map_blocks(log_loss, y_true, y_pred,
-    #                       sample_weight=sample_weight, eps=eps,
-    #                       meta=cp.array((), dtype=cp.float32))
-    #res = output.compute().mean()
-    res = output
+    #output = log_loss(y_true.compute(), y_pred.compute(),
+    #                        sample_weight=sample_weight, eps=eps)
+    res = None
+    if isinstance(y_true, da.Array):
+        res = da.map_blocks(log_loss, y_true, y_pred,
+                        sample_weight=sample_weight, eps=eps,
+                        meta=cp.array((), dtype=cp.float32), drop_axis=1)
+        #print(y_true.shape, y_pred.shape, res.shape)
+        #res = cp.array(res.compute()).mean()
+        res = log_loss(y_true.compute(), y_pred.compute(),
+                       sample_weight=sample_weight, eps=eps)
+    else:
+        res = log_loss(y_true, y_pred, sample_weight=sample_weight, eps=eps)
     return res
 
 def r2_score_mgpu(y_true: da.Array, y_pred: da.Array) -> float:
 
     output = da.map_blocks(r2_score, y_true, y_pred,
-                           meta=cp.array((), dtype=cp.float32))
-    res = output.compute().mean()
+                           meta=cp.array((), dtype=cp.float32), drop_axis=1)
+    res = cp.array(output.compute()).mean()
     return res
 
 def roc_auc_score_mgpu(y_true: da.Array, y_pred: da.Array) -> float:
 
     output = da.map_blocks(roc_auc_score, y_true, y_pred,
-                           meta=cp.array((), dtype=cp.float32))
-    res = output.compute()#.mean()
+                           meta=cp.array((), dtype=cp.float32), drop_axis=1)
+    res = cp.array(output.compute()).mean()
     return res
 
 def mean_squared_error_mgpu(y_true: da.Array, y_pred: da.Array,
@@ -260,21 +257,6 @@ def mean_absolute_percentage_error_gpu(y_true: cp.ndarray, y_pred: cp.ndarray,
 
     return err.mean()
 
-def roc_auc_ovr_mgpu(y_true: da.Array, y_pred: da.Array, sample_weight: Optional[da.Array] = None):
-    """ROC-AUC One-Versus-Rest for Multi-GPU data.
-
-    Args:
-        y_true: True target values.
-        y_pred: Predicted target values.
-        sample_weight: Weights of samples.
-
-    Returns:
-        Metric values.
-
-    """
-
-    raise NotImplementedError
-
 def roc_auc_ovr_gpu(y_true: cp.ndarray, y_pred: cp.ndarray, sample_weight: Optional[cp.ndarray] = None):
     """ROC-AUC One-Versus-Rest for GPU data.
 
@@ -287,8 +269,29 @@ def roc_auc_ovr_gpu(y_true: cp.ndarray, y_pred: cp.ndarray, sample_weight: Optio
         Metric values.
 
     """
+    if isinstance(y_true, (cudf.Series, cudf.DataFrame)):
+        y_pred = y_pred.values
+        y_true = y_true.values
+    n_classes = y_pred.shape[1]
+    res = 0.0
+    for i in range(n_classes):
+        res += (roc_auc_score(cp.where(y_true==i, 1, 0), y_pred[:, i]))
+    return res/n_classes
 
-    raise NotImplementedError
+def roc_auc_ovr_mgpu(y_true: da.Array, y_pred: da.Array, sample_weight: Optional[da.Array] = None):
+    """ROC-AUC One-Versus-Rest for Multi-GPU data.
+
+    Args:
+        y_true: True target values.
+        y_pred: Predicted target values.
+        sample_weight: Weights of samples.
+
+    Returns:
+        Metric values.
+
+    """
+    res = da.map_blocks(roc_auc_ovr_gpu, y_true, y_pred, sample_weight, meta=cp.array((), dtype=cp.float32), drop_axis=1)
+    return cp.array(res.compute()).mean()
 
 def rmsle_mgpu(y_true: cp.ndarray, y_pred: cp.ndarray, sample_weight: Optional[cp.ndarray] = None):
     """Root mean squared log error for Multi-GPU data.
@@ -306,10 +309,12 @@ def rmsle_mgpu(y_true: cp.ndarray, y_pred: cp.ndarray, sample_weight: Optional[c
 
     output_errors = da.subtract(da.log1p(y_true), da.log1p(y_pred))
     output_errors = da.multiply(output_errors, output_errors)
-    output_errors = da.multiply(output_errors, sample_weight)
+    if sample_weight is not None:
+        output_errors = da.multiply(output_errors, sample_weight)
+        output_errors = da.divide(da.sum(output_errors), sample_weight.sum())
+    else:
+        output_errors = da.mean(output_errors)
 
-    output_errors = da.divide(da.sum(output_errors), sample_weight.sum())
-    
     return cp.sqrt(output_errors.compute())
 
 def rmsle_gpu(y_true: cp.ndarray, y_pred: cp.ndarray, sample_weight: Optional[cp.ndarray] = None):
@@ -462,14 +467,15 @@ class BestClassBinaryWrapper_gpu:
     def __call__(self, y_true: cp.ndarray, y_pred: cp.ndarray, sample_weight: Optional[cp.ndarray] = None, **kwargs):
         y_pred = (y_pred > .5).astype(cp.float32)
 
-        return self.func(y_true, y_pred, sample_weight=sample_weight, **kwargs)
+        return self.func(y_true, y_pred)#, sample_weight=sample_weight, **kwargs)
 
 class AccuracyScoreWrapper:
     def __call__(self, y_true: cp.ndarray, y_pred: cp.ndarray, sample_weight: Optional[cp.ndarray] = None, **kwargs):
         if type(y_pred) == cp.ndarray:
             return accuracy_score(y_true, y_pred)#, sample_weight=sample_weight, **kwargs)
         elif type(y_pred) == da.Array:
-            return dask_accuracy_score(y_true, y_pred, sample_weight=sample_weight, **kwargs)
+            res = dask_accuracy_score(y_true, y_pred)#, sample_weight=sample_weight, **kwargs)
+            return res
 
 class BestClassMulticlassWrapper_gpu:
     """Metric wrapper to get best class prediction instead of probs for multiclass.
@@ -502,6 +508,13 @@ class BestClassMulticlassWrapper_gpu:
 
             y_pred = da.map_blocks(dask_argmax_gpu, y_pred,
                                    meta=cp.array((), dtype=cp.float32))[:,0]
+            if y_true.ndim == 2:
+                y_true = y_true[:,0]
+
+        elif isinstance(y_true, (cudf.Series, cudf.DataFrame)):
+            y_pred = (y_pred.values.argmax(axis=1)).astype(cp.float32)
+            y_true = y_true.values
+
         else:
 
             raise NotImplementedError
@@ -529,8 +542,8 @@ _valid_str_reg_metric_names_gpu = {
 }
 
 _valid_str_multiclass_metric_names_gpu = {
-    #'auc_mu': auc_mu_gpu,
-    #'auc': roc_auc_ovr_gpu,
+    'auc_mu': auc_mu_gpu,
+    'auc': roc_auc_ovr_gpu,
     'crossentropy': partial(log_loss, eps=1e-7),
     'accuracy': BestClassMulticlassWrapper_gpu(AccuracyScoreWrapper()),
     # TODO: uncomment after f1 score support is added
@@ -554,7 +567,7 @@ _valid_str_binary_metric_names_mgpu = {
 _valid_str_reg_metric_names_mgpu = {
     'r2': r2_score_mgpu,
     'mse': mean_squared_error_mgpu,
-    'mae': mean_absolute_error_mgpu,
+    'mae': dask_mean_absolute_error,
     'rmsle': rmsle_mgpu,
     'fair': mean_fair_error_mgpu,
     'huber': mean_huber_error_mgpu,
@@ -563,8 +576,8 @@ _valid_str_reg_metric_names_mgpu = {
 }
 
 _valid_str_multiclass_metric_names_mgpu = {
-    #'auc_mu': auc_mu_mgpu,
-    #'auc': roc_auc_ovr_mgpu,
+    'auc_mu': auc_mu_mgpu,
+    'auc': roc_auc_ovr_mgpu,
     'crossentropy':  partial(log_loss_mgpu, eps=1e-7),
     'accuracy': BestClassMulticlassWrapper_gpu(AccuracyScoreWrapper()),
     # TODO: uncomment after f1 score support is added

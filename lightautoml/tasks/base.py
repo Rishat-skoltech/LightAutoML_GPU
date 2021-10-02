@@ -6,9 +6,12 @@ from typing import Callable, Union, Optional, Dict, Any, TYPE_CHECKING
 
 import numpy as np
 import cupy as cp
+import cudf
+import dask_cudf
 import dask.array as da
 
-from lightautoml.tasks.losses import LGBLoss, SKLoss, TORCHLoss, CBLoss, CUMLLoss
+from lightautoml.tasks.losses import LGBLoss, SKLoss, TORCHLoss, CBLoss, CUMLLoss,\
+                                     XGBLoss_gpu, XGBLoss_mgpu
 from .common_metric import _valid_str_metric_names, _valid_metric_args
 from .common_metric_gpu import _valid_str_metric_names_gpu,\
                                _valid_str_metric_names_mgpu
@@ -281,8 +284,14 @@ class DaskmlMetric(SkMetric):
             assert dataset.shape[1] == 1, 'Dataset should have single column if metric is one_dim'
 
         #in general need to check type of the dataset and act acordingly
-        y_true = dataset.target.values
-        y_pred = dataset.data.astype(cp.float32).values
+        if isinstance(dataset.data, cp.ndarray):
+            y_true = dataset.target
+            y_pred = dataset.data.astype(cp.float32)
+        elif isinstance(dataset.data, (cudf.DataFrame, dask_cudf.DataFrame)):
+            y_true = dataset.target.values
+            y_pred = dataset.data.astype(cp.float32).values
+        else:
+            raise NotImplementedError
 
         sample_weight = None        
         if dataset.weights is not None:
@@ -429,8 +438,8 @@ class Task:
 
             assert loss in _valid_str_loss_names[self.name], 'Invalid loss name: {} for task {}.'.format(loss, self.name)
 
-            for loss_key, loss_factory in zip(['lgb', 'sklearn', 'torch', 'cb', 'cuml'], [LGBLoss, SKLoss, TORCHLoss,
-                                                                                          CBLoss, CUMLLoss]):
+            for loss_key, loss_factory in zip(['lgb', 'sklearn', 'torch', 'cb', 'cuml', 'xgb_gpu', 'xgb_mgpu'], [LGBLoss, SKLoss, TORCHLoss,
+                                                                                          CBLoss, CUMLLoss, XGBLoss_gpu, XGBLoss_mgpu]):
                 try:
                     self.losses[loss_key] = loss_factory(loss, loss_params=loss_params, device=self.device)
                 except (AssertionError, TypeError, ValueError):

@@ -11,6 +11,7 @@ from ..reader.base import Reader
 from ..utils.logging import get_logger, verbosity_to_loglevel
 from ..utils.timer import PipelineTimer
 from ..validation.utils import create_validation_iterator
+import dask_cudf
 
 logger = get_logger(__name__)
 
@@ -171,6 +172,11 @@ class AutoML:
         pipes = None
 
         self.levels = []
+        #print(type(train_valid.train.data))
+        #if type(train_valid.train.data) == dask_cudf.DataFrame:
+        #    print(train_valid.train.data.compute())
+        #else:
+        #    print(train_valid.train.data)
 
         for n, level in enumerate(self._levels, 1):
 
@@ -186,6 +192,9 @@ class AutoML:
             for k, ml_pipe in enumerate(level):
 
                 pipe_pred = ml_pipe.fit_predict(train_valid)
+                #print("##########")
+                #print(type(pipe_pred))
+                #print("###########")
                 level_predictions.append(pipe_pred)
                 pipes.append(ml_pipe)
 

@@ -62,7 +62,7 @@ def set_sklearn_folds_gpu(task: Task, target: GpuSeries, cv: Union[Callable, int
         if isinstance(target, (dask_cudf.Series, dask_cudf.DataFrame)):
             shuffle = True
             output = target.map_partitions(KFolds_gpu, cv, shuffle,
-                                           random_state, meta=('folds', np.int32))
+                                           random_state, meta=('folds', np.int32)).persist()
 
         elif group is not None:
             n_samples = len(target)

@@ -209,6 +209,10 @@ class TabularMLAlgo(MLAlgo):
             Dataset with predicted values.
 
         """
+
+        #print(train_valid_iterator.train.data)
+        #print(train_valid_iterator.train.data.shape)
+
         logger.info('Start fitting {} ...'.format(self._name))
         self.timer.start()
 

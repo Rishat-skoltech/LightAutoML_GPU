@@ -3,6 +3,8 @@
 from copy import copy, deepcopy
 from typing import Tuple, Union, Sequence
 
+from time import perf_counter
+
 import cupy as cp
 import cudf
 
@@ -109,7 +111,7 @@ class LinearLBFGS_gpu(TabularMLAlgo_gpu):
         return suggested_params
 
     def fit_predict_single_fold(self, train: TabularDatasetGpu, valid: TabularDatasetGpu,
-              part_id: int = None, dev_id: int = 0) -> Tuple[TorchBasedLinearEstimator, cp.ndarray]:
+              dev_id: int = 0) -> Tuple[TorchBasedLinearEstimator, cp.ndarray]:
         """Train on train dataset and predict on holdout dataset.
 
         Args:
@@ -120,6 +122,7 @@ class LinearLBFGS_gpu(TabularMLAlgo_gpu):
             Target predictions for valid dataset.
 
         """
+        st = perf_counter()
         train_target = train.target
         train_weights = train.weights
         valid_target = valid.target
@@ -127,29 +130,30 @@ class LinearLBFGS_gpu(TabularMLAlgo_gpu):
         train_data = train.data
         valid_data = valid.data
         if type(train) == DaskCudfDataset:
-            assert part_id is not None, 'fit_predict_single_fold: partition id should be set if data is distributed'
             train_target = train_target.compute()
-            #train_target = train_target.get_partition(part_id).compute()
             if train_weights is not None:
                 train_weights = train_weights.compute()
-                #train_weights = train.weights.get_partition(part_id).compute()
             valid_target = valid_target.compute()
-            #valid_target = valid_target.get_partition(part_id).compute()
             if valid_weights is not None:
-                #valid_weights = valid_weights.get_partition(part_id).compute()
                 valid_weights = valid_weights.compute()
             train_data = train_data.compute()
-            #train_data = train_data.get_partition(part_id).compute()
             valid_data = valid_data.compute()
-            #valid_data = valid_data.get_partition(part_id).compute()
+
+        print(perf_counter() - st, "counting data")
+        st = perf_counter()
         model = self._infer_params()
         model.model = model.model.to(f'cuda:{dev_id}')
+        print(perf_counter() - st, "transfering model")
+        st = perf_counter()
         model.fit(train_data, train_target, train_weights, valid_data, valid_target, valid_weights, dev_id)
-        val_pred = model.predict(valid_data)
+        print(perf_counter() - st, "fit data")
+        st = perf_counter()
+        val_pred = model.predict(valid_data, dev_id)
+        print(perf_counter() - st, "predict data")
         return model, val_pred
 
     def predict_single_fold(self, model: TorchBasedLinearEstimator, dataset: TabularDatasetGpu,
-                  part_id: int = None, dev_id: int = None) -> cp.ndarray:
+                  dev_id: int = 0) -> cp.ndarray:
         """Implements prediction on single fold.
 
         Args:
@@ -162,11 +166,10 @@ class LinearLBFGS_gpu(TabularMLAlgo_gpu):
         """
         dataset_data = dataset.data
         if type(dataset) == DaskCudfDataset:
-            assert part_id is not None, 'predict_single_fold: partition id should be set if data is distributed'
             dataset_data = dataset_data.compute()
-            #dataset_data = dataset_data.get_partition(part_id).compute()
 
-        pred = model.predict(dataset_data)
+        model.model = model.model.to(f'cuda:{dev_id}')
+        pred = model.predict(dataset_data, dev_id)
 
         return pred
 
@@ -250,7 +253,7 @@ class LinearL1CD_gpu(TabularMLAlgo_gpu):
 
         return pred
 
-    def fit_predict_single_fold(self, train: TabularDatasetGpu, valid: TabularDatasetGpu, part_id: int = None) -> Tuple[LinearEstimator, cp.ndarray]:
+    def fit_predict_single_fold(self, train: TabularDatasetGpu, valid: TabularDatasetGpu) -> Tuple[LinearEstimator, cp.ndarray]:
         """Train on train dataset and predict on holdout dataset.
 
         Args:
@@ -268,21 +271,14 @@ class LinearL1CD_gpu(TabularMLAlgo_gpu):
         train_data = train.data
         valid_data = valid.data
         if type(train) == DaskCudfDataset:
-            assert part_id is not None, 'fit_predict_single_fold: partition id should be set if data is distributed'
             train_target = train_target.compute()
-            #train_target = train_target.get_partition(part_id).compute()
             if train_weights is not None:
                 train_weights = train_weights.compute()
-                #train_weights = train_weights.get_partition(part_id).compute()
             valid_target = valid_target.compute()
-            #valid_target = valid_target.get_partition(part_id).compute()
             if valid_weights is not None:
-                #valid_weights = valid_weights.get_partition(part_id).compute()
                 valid_weights = valid_weights.compute()
             train_data = train_data.compute()
-            #train_data = train_data.get_partition(part_id).compute()
             valid_data = valid_data.compute()
-            #valid_data = valid_data.get_partition(part_id).compute()
 
         _model, cs, l1_ratios, early_stopping = self._infer_params()
 
@@ -319,12 +315,9 @@ class LinearL1CD_gpu(TabularMLAlgo_gpu):
                     model.set_params(**{'alpha': c})
 
                 model.fit(train_data, train_target, train_weight)
-
                 model_coefs = model.coef_
-
                 if type(model_coefs) == cudf.DataFrame:
                     model_coefs = model_coefs.values
-
                 if cp.allclose(model_coefs, 0):
                     if n == (len(cs) - 1):
                         logger.warning('All model coefs are 0. Model with l1_ratio {0} is dummy'.format(l1_ratio), UserWarning)
@@ -367,7 +360,6 @@ class LinearL1CD_gpu(TabularMLAlgo_gpu):
             if self.timer.time_limit_exceeded():
                 logger.info('Time limit exceeded')
                 break
-
         val_pred = self.task.losses['cuml'].bw_func(best_pred)
         return best_model, val_pred.values
 

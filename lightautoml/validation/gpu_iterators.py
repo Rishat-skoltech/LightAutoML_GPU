@@ -59,6 +59,26 @@ class FoldsIterator_gpu(TrainValidIterator):
         self._curr_idx = 0
         return self
 
+    def __getitem__(self, number):
+        if number >= self.n_folds:
+            raise IndexError('index out of range')
+        
+        val_idx = (self.train.folds == number).values
+        if type(self.train) == DaskCudfDataset:
+            val_idx = val_idx.compute()
+
+        tr_idx = cp.logical_not(val_idx)
+        idx = cp.arange(self.train.shape[0])
+        tr_idx, val_idx = idx[tr_idx], idx[val_idx]
+        if type(self.train) == DaskCudfDataset:
+            tr_idx = tr_idx.get()
+            val_idx = val_idx.get()
+
+        train, valid = self.train[tr_idx], self.train[val_idx]
+
+        return val_idx, cast(GpuDataset, train), cast(GpuDataset, valid)
+       
+
     def __next__(self) -> Tuple[cp.ndarray, GpuDataset, GpuDataset]:
         """Define how to get next object.
 

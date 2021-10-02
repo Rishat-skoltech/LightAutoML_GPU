@@ -117,23 +117,31 @@ def generate_data(n, n_num, n_cat, n_date, n_str, max_n_cat):
     return 'target', cols, data
 
 def test_pipeline():
-    target, _, data = generate_data(n=40, n_num=3, n_cat=2, n_date=5,
-                                    n_str=5, max_n_cat=10)
+    #target, _, data = generate_data(n=200, n_num=3, n_cat=2, n_date=5,
+    #                                n_str=5, max_n_cat=10)
                                     
-    print(data)
-    
-    train_data, test_data = train_test_split(data, 
-                                         test_size=TEST_SIZE, 
-                                         stratify=data[TARGET_NAME], 
-                                         random_state=RANDOM_STATE)
-    
-    cudf_data = cudf.DataFrame.from_pandas(data, nan_as_null=False)
-    daskcudf_data = dask_cudf.from_cudf(cudf_data, npartitions=1)
-    
+    data = pd.read_csv('./application_train.csv')
+
+    data['BIRTH_DATE'] = (np.datetime64('2018-01-01') + data['DAYS_BIRTH'].astype(np.dtype('timedelta64[D]'))).astype(str)
+    data['EMP_DATE'] = (np.datetime64('2018-01-01') + np.clip(data['DAYS_EMPLOYED'], None, 0).astype(np.dtype('timedelta64[D]'))
+                       ).astype(str)
+    #data['BIRTH_DATE'] = np.datetime64('2018-01-01') + data['DAYS_BIRTH'].astype(np.dtype('timedelta64[D]'))
+    #data['EMP_DATE'] = np.datetime64('2018-01-01') + np.clip(data['DAYS_EMPLOYED'], None, 0).astype(np.dtype('timedelta64[D]'))
+
+    data['constant'] = 1
+    data['allnan'] = np.nan
+
+    data.drop(['DAYS_BIRTH',  'DAYS_EMPLOYED'], axis = 1, inplace = True)
+    print(len(data))
+    data[TARGET_NAME] = pd.Series(np.random.randint(0, 4, len(data)))
+
+    #data = data.sample(100000).reset_index(drop=True)
+    #data = pd.concat([data, data]).reset_index(drop=True)
+
     np.random.seed(RANDOM_STATE)
     torch.set_num_threads(N_THREADS)
     
-    timer = PipelineTimer(600, mode=2)
+    timer = PipelineTimer(1500, mode=2)
     timer_gbm = timer.get_task_timer('gbm') # Get task timer from pipeline timer 
     feat_sel_0 = LGBSimpleFeatures()
     mod_sel_0 = BoostCB(timer=timer_gbm)
@@ -174,26 +182,20 @@ def test_pipeline():
     )
 
     task = Task('multiclass', metric = 'crossentropy', ) 
-    reader = PandasToPandasReader(task = task, samples = None, max_nan_rate = 1,
+    reader = PandasToPandasReader(task = task, samples = 100000, max_nan_rate = 1,
                               max_constant_rate = 1, advanced_roles = True,
                               drop_score_co = -1, n_jobs = 4)
                               
     blender = WeightedBlender()
     automl = AutoML(reader=reader, levels=[
         [gbm_lvl0, reg_lvl0]
-    ], timer=timer, blender=blender, skip_conn=False)
-    
-    oof_pred = automl.fit_predict(train_data, roles={'target': TARGET_NAME})
+    ], timer=timer, skip_conn=False, blender=blender)
+
+    st = perf_counter()    
+    oof_pred = automl.fit_predict(data, roles={'target': TARGET_NAME})
+    print(perf_counter() - st, "TOTAL TIME CB")
+
     logging.info('oof_pred:\n{}\nShape = {}'.format(oof_pred, oof_pred.shape))
     
-    test_pred = automl.predict(test_data)
-    logging.debug('Prediction for test data:\n{}\nShape = {}'
-              .format(test_pred, test_pred.shape))
-
-    logging.info('Check scores...')
-    logging.info('OOF score: {}'.format(log_loss(train_data[TARGET_NAME].values, oof_pred.data)))
-    logging.info('TEST score: {}'.format(log_loss(test_data[TARGET_NAME].values, test_pred.data)))
-
-
 if __name__ == "__main__":
     test_pipeline()

@@ -4,7 +4,6 @@ from typing import Any, Union, Dict, Sequence, TypeVar, Optional
 from copy import deepcopy
 
 import numpy as np
-from time import perf_counter
 
 import pandas as pd
 
@@ -66,6 +65,9 @@ class HybridReader(CudfReader):
         self.args = args
         self.params = kwargs
 
+        self.final_roles = {}
+        self.final_reader = None
+
     def fit_read(self, train_data: pd.DataFrame, features_names: Any = None,
                  roles = None,
                  **kwargs: Any) -> LAMLDataset:
@@ -82,7 +84,6 @@ class HybridReader(CudfReader):
             Dataset with selected features.
 
         """
-        start = perf_counter()
         parsed_roles, kwargs = self._prepare_roles_and_kwargs(roles, train_data, **kwargs)
 
         if self.num_gpu_readers == 0:
@@ -141,21 +142,24 @@ class HybridReader(CudfReader):
         #with Parallel(n_jobs=num_readers, prefer='threads', max_nbytes=None) as p:
             output_roles = p(delayed(call_reader)(reader, train_data[name], target=train_data[self.target]) for (reader, name) in zip(readers, names))
 
-        final_roles = {}
-        final_reader = None
         for role in output_roles:
-            final_roles.update(role)
-
-        print(perf_counter() - start, "hybrid finished like")
+            self.final_roles.update(role)
+        self.final_roles.update({self.target: 'target'})
         if self.output == 'gpu':
-            final_reader = CudfReader(self.task, 0, *self.args, **self.params, advanced_roles=False)
+            self.final_reader = CudfReader(self.task, 0, *self.args, **self.params, advanced_roles=False)
         elif self.output == 'cpu':
-            final_reader = PandasToPandasReader(self.task, *self.args, **self.params, advanced_roles=False)
+            self.final_reader = PandasToPandasReader(self.task, *self.args, **self.params, advanced_roles=False)
         elif self.output == 'mgpu':
-            final_reader = DaskCudfReader(self.task, *self.args, **self.params, advanced_roles=False, npartitions=self.npartitions, index_ok=self.index_ok, compute = self.compute)
+            self.final_reader = DaskCudfReader(self.task, *self.args, **self.params, advanced_roles=False, npartitions=self.npartitions, index_ok=self.index_ok, compute = self.compute)
 
-        st = perf_counter()
-        output = final_reader.fit_read(train_data, roles=final_roles, roles_parsed=True, target=train_data[self.target])
-        print(perf_counter() - st, "final fit_read")
+        output = self.final_reader.fit_read(train_data, roles=self.final_roles, roles_parsed=True)
 
         return output
+
+    def read(self, data, features_names: Any = None,
+             add_array_attrs: bool = False):
+
+        assert self.final_reader is not None, "reader should be fitted first"
+
+        return self.final_reader.read(data, features_names, add_array_attrs)
+

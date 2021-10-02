@@ -103,30 +103,29 @@ class CudfReader(PandasToPandasReader):
 
     def _prepare_data_and_target(self, train_data, **kwargs):
 
-        output_data = None
         #if isinstance(train_data, (pd.DataFrame, pd.Series)):
         if type(train_data) == pd.DataFrame or type(train_data) == pd.Series:
             #st = perf_counter()
             cp.cuda.runtime.setDevice(self.device_num)
             #print(cp.cuda.runtime.getDevice(), "device", perf_counter() - st, " time")
             #st = perf_counter()
-            output_data = cudf.from_pandas(train_data, nan_as_null=False)
-            kwargs['target'] = output_data[self.target]
+            train_data = cudf.from_pandas(train_data, nan_as_null=False)
+            kwargs['target'] = train_data[self.target]
             #print(perf_counter() - st, "data copying")
         elif type(train_data) == cudf.DataFrame or type(train_data) == cudf.Series:
         #elif isinstance(train_data, (cudf.DataFrame, cudf.Series)):
-            output_data = train_data
+            pass
         elif type(train_data) == dask_cudf.DataFrame or type(train_data) == dask_cudf.Series:
         #elif isinstance(train_data, (dask_cudf.DataFrame, dask_cudf.Series)):
             cp.cuda.runtime.setDevice(self.device_num)
-            output_data = train_data.compute()
-            kwargs['target'] = output_data[self.target]
+            train_data = train_data.compute()
+            kwargs['target'] = train_data[self.target]
         else:
             raise NotImplementedError("Input data type is not supported")
 
         kwargs['target'] = self._create_target(kwargs['target'])
 
-        return output_data, kwargs
+        return train_data, kwargs
 
     def fit_read(self, train_data: DataFrame, features_names: Any = None,
                  roles: UserDefinedRolesDict = None, roles_parsed: bool = False,
