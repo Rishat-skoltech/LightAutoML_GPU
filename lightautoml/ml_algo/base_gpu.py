@@ -125,6 +125,9 @@ class TabularMLAlgo_gpu(TabularMLAlgo):
             res = None
             models = []
             preds = []
+
+            train_valid_iterator.train = train_valid_iterator.train.to_cudf()
+            
             #with Parallel(n_jobs=n_parts, prefer='processes', 
             #              backend='loky', max_nbytes=None) as p:
             with Parallel(n_jobs=n_parts, prefer='threads') as p: 
