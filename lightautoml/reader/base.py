@@ -7,6 +7,8 @@ import numpy as np
 import pandas as pd
 from pandas import Series, DataFrame
 
+from time import perf_counter
+
 from .guess_roles import get_numeric_roles_stat, calc_encoding_rules, rule_based_roles_guess, \
     get_category_roles_stat, calc_category_rules, rule_based_cat_handler_guess, get_null_scores
 from .utils import set_sklearn_folds
@@ -212,6 +214,7 @@ class PandasToPandasReader(Reader):
             Dataset with selected features.
 
         """
+        st = perf_counter()
         logger.info('Train data shape: {}'.format(train_data.shape))
 
         if roles is None:
@@ -310,6 +313,7 @@ class PandasToPandasReader(Reader):
             self.upd_used_features(remove=droplist)
             self._roles = {x: new_roles[x] for x in new_roles if x not in droplist}
             dataset = PandasDataset(train_data[self.used_features], self.roles, task=self.task, **kwargs)
+        print(perf_counter() - st, "pandas reader fit_read finished")
         return dataset
 
     def _create_target(self, target: Series):

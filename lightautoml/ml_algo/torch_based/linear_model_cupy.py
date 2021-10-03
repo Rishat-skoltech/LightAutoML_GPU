@@ -210,12 +210,6 @@ class TorchBasedLinearEstimator:
             Tuple (numeric_features, cat_features).
 
         """
-        '''if isinstance(data, (cudf.DataFrame, cudf.Series)):
-            print(data.values)
-            print(data.values.shape)
-        else:
-            print(data.compute().values)
-            print(data.compute().values.shape)'''
         #DO if type()== DON"T FORGET
         if 0 < len(self.categorical_idx) < data.shape[1]:
             # noinspection PyTypeChecker
@@ -256,7 +250,6 @@ class TorchBasedLinearEstimator:
         )
         # keep history
         results = []
-
         def closure():
             opt.zero_grad()
             output = self.model(data, data_cat)
@@ -282,7 +275,6 @@ class TorchBasedLinearEstimator:
         """
         # weighted loss
         loss = self.loss(y_true, y_pred, sample_weight=weights)
-
         n = y_true.shape[0]
         if weights is not None:
             n = weights.sum()
@@ -375,7 +367,8 @@ class TorchBasedLinearEstimator:
         with torch.set_grad_enabled(False):
             self.model.eval()
             preds = cp.asarray(self.model(data, data_cat))
-
+        if preds.ndim > 1 and preds.shape[1] == 1:
+            preds = cp.squeeze(preds)
         return preds
 
     def predict(self, data: cp.ndarray, dev_id: int = 0) -> cp.ndarray:
@@ -389,9 +382,8 @@ class TorchBasedLinearEstimator:
 
         """
         data, data_cat = self._prepare_data(data, dev_id)
-
-        return self._score(data, data_cat)
-
+        res = self._score(data, data_cat)
+        return(res)
 
 class TorchBasedLogisticRegression(TorchBasedLinearEstimator):
     """Linear binary classifier."""
@@ -438,8 +430,8 @@ class TorchBasedLogisticRegression(TorchBasedLinearEstimator):
 
         """
         pred = super().predict(data, dev_id)
-        if self._binary:
-            pred = pred[:, 0]
+        #if self._binary:
+        #    pred = pred[:, 0]
         return pred
 
 

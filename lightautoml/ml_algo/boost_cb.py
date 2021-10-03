@@ -11,6 +11,7 @@ from pandas import Series
 
 from .base import TabularMLAlgo
 from .tuning.optuna import OptunaTunableMixin
+
 from ..dataset.np_pd_dataset import NumpyDataset, CSRSparseDataset, PandasDataset
 from ..pipelines.selection.base import ImportanceEstimator
 from ..pipelines.utils import get_columns_by_role
@@ -99,6 +100,7 @@ class BoostCB(OptunaTunableMixin, TabularMLAlgo, ImportanceEstimator):
     def init_params_on_input(self, train_valid_iterator: TrainValidIterator) -> dict:
         """Get model parameters depending on input dataset parameters.
 
+irom ..dddataset.cp_cudf_dataset import CupyDataset, CudfDataset
         Args:
             train_valid_iterator: Classic cv-iterator.
 
@@ -318,7 +320,6 @@ class BoostCB(OptunaTunableMixin, TabularMLAlgo, ImportanceEstimator):
         model.fit(cb_train, eval_set=cb_valid)
 
         val_pred = self._predict(model, cb_valid, params)
-
         return model, val_pred
 
     def predict_single_fold(self, model: cb.CatBoost, dataset: TabularDataset) -> np.ndarray:

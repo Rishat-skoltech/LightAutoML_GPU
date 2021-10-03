@@ -301,19 +301,22 @@ class TabularDataFeatures_gpu(TabularDataFeatures):
             Series.
 
         """
+        un = []
+        if len(feats) > 0:
+            data = train.data[feats]
 
-        data = train.data[feats]
-        if self.subsample is not None and self.subsample < len(feat):
-                data = data.sample(n=int(self.subsample) if self.subsample > 1 else None,
-                                   frac=self.subsample if self.subsample <= 1 else None,
-                                   random_state=self.random_state)
+            if self.subsample is not None and self.subsample < len(feat):
+                    data = data.sample(n=int(self.subsample) if self.subsample > 1 else None,
+                                       frac=self.subsample if self.subsample <= 1 else None,
+                                       random_state=self.random_state)
 
-        desc = data.astype(object).describe(include='all')
-        un = desc.loc['unique']
-        if type(data) == dask_cudf.DataFrame:
-            #why describe returns pandas for dask_cudf.DataFrame
-            un = un.compute().astype('int').values[0]
-        else:
-            un = un.astype('int').values[0].get()
-        #can we just transpose dataframe?
+            desc = data.astype(object).describe(include='all')
+            un = desc.loc['unique']
+            if type(data) == dask_cudf.DataFrame:
+                #why describe returns pandas for dask_cudf.DataFrame
+                un = un.compute().astype('int').values[0]
+            else:
+                un = un.astype('int').values[0].get()
+            #can we just transpose dataframe?
+
         return pd.Series(un, index=feats, dtype='int')

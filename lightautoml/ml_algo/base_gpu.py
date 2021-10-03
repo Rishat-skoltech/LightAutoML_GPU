@@ -149,6 +149,8 @@ class TabularMLAlgo_gpu(TabularMLAlgo):
                         .reshape(preds[n].shape[0].compute(), -1)
                     counter_arr[idx] += 1
                 else:
+                    if isinstance(preds[n], np.ndarray):
+                        preds[n] = cp.asarray(preds[n])
                     preds_arr[idx] += preds[n].reshape((preds[n].shape[0], -1))
                     counter_arr[idx] += 1
         else:
@@ -157,7 +159,7 @@ class TabularMLAlgo_gpu(TabularMLAlgo):
                 logger.info('\n===== Start working with fold {} for {} (orig) =====\n'.format(n, self._name))
 
                 self.timer.set_control_point()
-                model, pred = self.fit_predict_single_fold(train, valid, 0)
+                model, pred = self.fit_predict_single_fold(train, valid)
                 self.models.append(model)
 
                 if isinstance(pred, (dask_cudf.DataFrame, dask_cudf.Series, dd.DataFrame, dd.Series)):
@@ -174,6 +176,8 @@ class TabularMLAlgo_gpu(TabularMLAlgo):
                         counter_arr += 1
 
                 else:
+                    if isinstance(pred, np.ndarray):
+                        pred = cp.asarray(pred)
                     preds_arr[idx] += pred.reshape((pred.shape[0], -1))
                     counter_arr[idx] += 1
 

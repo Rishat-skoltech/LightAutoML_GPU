@@ -91,13 +91,16 @@ class NaNFlags_gpu(LAMLTransformer):
 
         """
         # convert to accepted dtype and get attributes
-        nans = dataset[:, self.nan_cols].data
-
-        # transform
-        new_arr = nans.isna().astype(cp.float32)
-        # create resulted
+ 
         output = dataset.empty()
-        output.set_data(new_arr, self.features, NumericRole(np.float32))
+
+        if len(self.nan_cols) > 0:
+            nans = dataset[:, self.nan_cols].data
+ 
+            # transform
+            new_arr = nans.isna().astype(cp.float32)
+            # create resulted
+            output.set_data(new_arr, self.features, NumericRole(np.float32))
 
         return output
 

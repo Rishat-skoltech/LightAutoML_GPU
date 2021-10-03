@@ -3,6 +3,8 @@
 from typing import Any, Union, Dict, Sequence, TypeVar, Optional
 from copy import deepcopy
 
+from time import perf_counter
+
 import numpy as np
 
 import pandas as pd
@@ -43,7 +45,7 @@ class HybridReader(CudfReader):
 
     def __init__(self, task: Task, num_cpu_readers: int, num_gpu_readers: int, output: str, gpu_ratio: int,
                  advanced_roles: bool = True, index_ok: bool = False, npartitions: int = 1, 
-                 compute: bool = False, *args: Any, **kwargs: Any):
+                 compute: bool = False, n_jobs: int = 1, *args: Any, **kwargs: Any):
                  #advanced_roles: bool = True, *args: Any, **kwargs: Any):
         """
 
@@ -61,6 +63,7 @@ class HybridReader(CudfReader):
         self.npartitions = npartitions
         self.index_ok = index_ok
         self.compute = compute
+        self.n_jobs = n_jobs
 
         self.args = args
         self.params = kwargs
@@ -84,6 +87,7 @@ class HybridReader(CudfReader):
             Dataset with selected features.
 
         """
+        st = perf_counter()
         parsed_roles, kwargs = self._prepare_roles_and_kwargs(roles, train_data, **kwargs)
 
         if self.num_gpu_readers == 0:
@@ -122,7 +126,7 @@ class HybridReader(CudfReader):
 
         #assert about max number of gpus here, don't forget
         for i in range(self.num_gpu_readers):
-            readers.append(CudfReader(self.task, dev_num, *self.args, **self.params, advanced_roles=self.advanced_roles))
+            readers.append(CudfReader(self.task, dev_num, *self.args, **self.params, n_jobs = self.n_jobs, advanced_roles=self.advanced_roles))
             dev_num += 1
         for i in range(self.num_cpu_readers):
             readers.append(PandasToPandasReader(self.task, *self.args, **self.params, advanced_roles=self.advanced_roles))
@@ -146,13 +150,16 @@ class HybridReader(CudfReader):
             self.final_roles.update(role)
         self.final_roles.update({self.target: 'target'})
         if self.output == 'gpu':
-            self.final_reader = CudfReader(self.task, 0, *self.args, **self.params, advanced_roles=False)
+            self.final_reader = CudfReader(self.task, 0, *self.args, **self.params, n_jobs = self.n_jobs, advanced_roles=False)
         elif self.output == 'cpu':
             self.final_reader = PandasToPandasReader(self.task, *self.args, **self.params, advanced_roles=False)
         elif self.output == 'mgpu':
-            self.final_reader = DaskCudfReader(self.task, *self.args, **self.params, advanced_roles=False, npartitions=self.npartitions, index_ok=self.index_ok, compute = self.compute)
+            self.final_reader = DaskCudfReader(self.task, *self.args, **self.params, n_jobs = self.n_jobs,
+                                               advanced_roles=False, npartitions=self.npartitions,
+                                               index_ok=self.index_ok, compute = self.compute)
 
         output = self.final_reader.fit_read(train_data, roles=self.final_roles, roles_parsed=True)
+        print(perf_counter() - st, "hybrid reader fit_read finished")
 
         return output
 

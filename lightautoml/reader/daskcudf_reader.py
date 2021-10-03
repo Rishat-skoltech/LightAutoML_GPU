@@ -9,6 +9,8 @@ import pandas as pd
 import cudf
 import dask_cudf
 
+from time import perf_counter
+
 from dask_cudf.core import DataFrame, Series
 from ..tasks import Task
 
@@ -100,6 +102,7 @@ class DaskCudfReader(CudfReader):
             Dataset with selected features.
 
         """
+        st = perf_counter()
         logger.info('Train data shape: {}'.format(train_data.shape))
         parsed_roles, kwargs = self._prepare_roles_and_kwargs(roles, train_data, roles_parsed = roles_parsed, **kwargs)
         train_data, kwargs = self._prepare_data_and_target(train_data, **kwargs)
@@ -199,6 +202,7 @@ class DaskCudfReader(CudfReader):
         else:
             dataset = DaskCudfDataset(data=train_data[self.used_features],
                                   roles=self.roles, index_ok = self.index_ok, task=self.task, **kwargs)
+        print(perf_counter() - st, "dask cudf reader fit_read finisehd")
         return dataset
 
     def _create_target(self, target: Series):

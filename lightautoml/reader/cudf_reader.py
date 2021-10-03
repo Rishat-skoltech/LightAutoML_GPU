@@ -143,6 +143,7 @@ class CudfReader(PandasToPandasReader):
             Dataset with selected features.
 
         """
+        st = perf_counter()
         #cudf.set_allocator("managed")
         logger.info('Train data shape: {}'.format(train_data.shape))
 
@@ -226,6 +227,7 @@ class CudfReader(PandasToPandasReader):
                            for x in new_roles if x not in droplist}
             dataset = CudfDataset(train_data[self.used_features],
                                   self.roles, task=self.task, **kwargs)
+        print(perf_counter() - st, "cudf reader fit_read finished")
         return dataset
 
     def _create_target(self, target: Series):

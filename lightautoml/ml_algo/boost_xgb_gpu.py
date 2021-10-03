@@ -225,7 +225,7 @@ class BoostXGB(OptunaTunableMixin, TabularMLAlgo_gpu, ImportanceEstimator):
 
         return trial_values
 
-    def fit_predict_single_fold(self, train: TabularDatasetGpu, valid: TabularDatasetGpu, part_id: int = None, dev_id: int = 0) -> Tuple[xgb.Booster, np.ndarray]:
+    def fit_predict_single_fold(self, train: TabularDatasetGpu, valid: TabularDatasetGpu, dev_id: int = 0) -> Tuple[xgb.Booster, np.ndarray]:
         """Implements training and prediction on single fold.
 
         Args:
@@ -243,21 +243,14 @@ class BoostXGB(OptunaTunableMixin, TabularMLAlgo_gpu, ImportanceEstimator):
         train_data = train.data
         valid_data = valid.data
         if type(train) == DaskCudfDataset:
-            assert part_id is not None, 'fit_predict_single_fold: partition id should be set if data is distributed'
             train_target = train_target.compute()
-            #train_target = train_target.get_partition(part_id).compute()
             if train_weights is not None:
                 train_weights = train_weights.compute()
-                #train_weights = train_weights.get_partition(part_id).compute()
             valid_target = valid_target.compute()
-            #valid_target = valid_target.get_partition(part_id).compute()
             if valid_weights is not None:
-                #valid_weights = valid_weights.get_partition(part_id).compute()
                 valid_weights = valid_weights.compute()
             train_data = train_data.compute()
-            #train_data = train_data.get_partition(part_id).compute()
             valid_data = valid_data.compute()
-            #valid_data = valid_data.get_partition(part_id).compute()
         params, num_trees, early_stopping_rounds, verbose_eval, fobj, feval = self._infer_params()
         train_target, train_weight = self.task.losses['xgb_gpu'].fw_func(train_target, train_weights)
         valid_target, valid_weight = self.task.losses['xgb_gpu'].fw_func(valid_target, valid_weights)
@@ -270,7 +263,7 @@ class BoostXGB(OptunaTunableMixin, TabularMLAlgo_gpu, ImportanceEstimator):
         val_pred = self.task.losses['xgb_gpu'].bw_func(val_pred)
         return model, val_pred
 
-    def predict_single_fold(self, model: xgb.Booster, dataset: TabularDatasetGpu, part_id: int = None) -> np.ndarray:
+    def predict_single_fold(self, model: xgb.Booster, dataset: TabularDatasetGpu) -> np.ndarray:
         """Predict target values for dataset.
 
         Args:
@@ -283,9 +276,7 @@ class BoostXGB(OptunaTunableMixin, TabularMLAlgo_gpu, ImportanceEstimator):
         """
         dataset_data = dataset.data
         if type(dataset) == DaskCudfDataset:
-            assert part_id is not None, 'predict_single_fold: partition id should be set if data is distributed'
             dataset_data = dataset_data.compute()
-            #dataset_data = dataset_data.get_partition(part_id).compute()
 
         pred = self.task.losses['xgb_gpu'].bw_func(model.inplace_predict(dataset_data))
 
@@ -343,7 +334,7 @@ class BoostXGB_dask(BoostXGB):
                 setattr(new_inst, k, deepcopy(v, memo))
         return new_inst
         
-    def fit_predict_single_fold(self, train: DaskCudfDataset, valid: DaskCudfDataset, part_id: int = None, dev_id: int = 0) -> Tuple[dxgb.Booster, np.ndarray]:
+    def fit_predict_single_fold(self, train: DaskCudfDataset, valid: DaskCudfDataset, dev_id: int = 0) -> Tuple[dxgb.Booster, np.ndarray]:
         """Implements training and prediction on single fold.
 
         Args:
