@@ -59,7 +59,7 @@ N_FOLDS = 5 # folds cnt for AutoML
 RANDOM_STATE = 42 # fixed random state for various reasons
 TEST_SIZE = 0.2 # Test size for metric check
 TIMEOUT = 600 # Time in seconds for automl run
-TARGET_NAME = 'TARGET' # Target column name
+TARGET_NAME = 'target' # Target column name
 
 
 @jit(nopython=True)
@@ -125,20 +125,20 @@ def test_pipeline(client):
     #target, _, data = generate_data(n=200, n_num=3, n_cat=2, n_date=5,
     #                                n_str=5, max_n_cat=10)
                                     
-    data = pd.read_csv('./application_train.csv')
+    data = pd.read_csv('./jobs_train.csv')
 
-    data['BIRTH_DATE'] = (np.datetime64('2018-01-01') + data['DAYS_BIRTH'].astype(np.dtype('timedelta64[D]'))).astype(str)
-    data['EMP_DATE'] = (np.datetime64('2018-01-01') + np.clip(data['DAYS_EMPLOYED'], None, 0).astype(np.dtype('timedelta64[D]'))
-                       ).astype(str)
+    #data['BIRTH_DATE'] = (np.datetime64('2018-01-01') + data['DAYS_BIRTH'].astype(np.dtype('timedelta64[D]'))).astype(str)
+    #data['EMP_DATE'] = (np.datetime64('2018-01-01') + np.clip(data['DAYS_EMPLOYED'], None, 0).astype(np.dtype('timedelta64[D]'))
+    #                   ).astype(str)
     #data['BIRTH_DATE'] = np.datetime64('2018-01-01') + data['DAYS_BIRTH'].astype(np.dtype('timedelta64[D]'))
     #data['EMP_DATE'] = np.datetime64('2018-01-01') + np.clip(data['DAYS_EMPLOYED'], None, 0).astype(np.dtype('timedelta64[D]'))
 
-    data['constant'] = 1
-    data['allnan'] = np.nan
+    #data['constant'] = 1
+    #data['allnan'] = np.nan
 
-    data.drop(['DAYS_BIRTH',  'DAYS_EMPLOYED'], axis = 1, inplace = True)
+    #data.drop(['DAYS_BIRTH',  'DAYS_EMPLOYED'], axis = 1, inplace = True)
     print(len(data))
-    data[TARGET_NAME] = pd.Series(np.random.randint(0, 4, len(data)))
+    #data[TARGET_NAME] = pd.Series(np.random.randint(0, 4, len(data)))
     
     #data = data.sample(100000).reset_index(drop=True)
     #data = pd.concat([data, data]).reset_index(drop=True)
@@ -190,10 +190,10 @@ def test_pipeline(client):
         features_pipeline=feats_reg_0, 
         post_selection=None
     )
-    task = Task('multiclass', metric = 'crossentropy', device='mgpu')
+    task = Task('binary', metric = 'logloss', device='mgpu')
     
-    reader = HybridReader(task = task, num_cpu_readers=1, num_gpu_readers=2,
-                              gpu_ratio=0.7, output='mgpu', npartitions=2,
+    reader = HybridReader(task = task, num_cpu_readers=1, num_gpu_readers=1,
+                              gpu_ratio=0.7, output='mgpu', npartitions=1,
                               index_ok = True, compute = True,
                               samples = 100000 , max_nan_rate = 1,
                               max_constant_rate = 1, advanced_roles = True,
@@ -213,15 +213,15 @@ def test_pipeline(client):
 
     logging.info('oof_pred:\n{}\nShape = {}'.format(oof_pred.data, oof_pred.shape))
 
-    test  = data.sample(10000).reset_index(drop=True)
+    '''test  = data.sample(10000).reset_index(drop=True)
     st = perf_counter()
     test_res = automl.predict(test)
     print(perf_counter() - st, "predict time")
-    print(test_res)
+    print(test_res)'''
     print("FINISHED")
 
 if __name__ == "__main__":
-    with LocalCUDACluster(rmm_managed_memory=True, CUDA_VISIBLE_DEVICES="0,1",
+    with LocalCUDACluster(rmm_managed_memory=True, CUDA_VISIBLE_DEVICES="0",
                                protocol="ucx", enable_nvlink=True) as cluster:
         print("dashboard:", cluster.dashboard_link)
         with Client(cluster) as client:

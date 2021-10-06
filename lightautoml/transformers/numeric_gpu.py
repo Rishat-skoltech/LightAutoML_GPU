@@ -114,11 +114,13 @@ class NaNFlags_gpu(LAMLTransformer):
             DaskCudf dataset with encoded labels.
 
         """
-        new_data = dataset.data[self.nan_cols].isna().astype(np.float32)
-
         output = dataset.empty()
 
-        output.set_data(new_data, self.features, NumericRole(np.float32))
+        if len(self.nan_cols) > 0:
+            new_data = dataset.data[self.nan_cols].isna().astype(np.float32)
+
+            output.set_data(new_data, self.features, NumericRole(np.float32))
+
         return output
 
     def fit(self, dataset: GpuDataset):

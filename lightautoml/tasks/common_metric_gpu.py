@@ -257,6 +257,9 @@ def mean_absolute_percentage_error_gpu(y_true: cp.ndarray, y_pred: cp.ndarray,
 
     return err.mean()
 
+def roc_auc_score_gpu(y_true: cp.ndarray, y_pred: cp.ndarray, sample_weight: Optional[cp.ndarray] = None):
+    return roc_auc_score(y_true, y_pred)
+
 def roc_auc_ovr_gpu(y_true: cp.ndarray, y_pred: cp.ndarray, sample_weight: Optional[cp.ndarray] = None):
     """ROC-AUC One-Versus-Rest for GPU data.
 
@@ -525,7 +528,7 @@ class BestClassMulticlassWrapper_gpu:
 # TODO: Move to other module
 
 _valid_str_binary_metric_names_gpu = {
-    'auc': roc_auc_score,
+    'auc': roc_auc_score_gpu,
     'logloss': partial(log_loss, eps=1e-7),
     'accuracy': BestClassBinaryWrapper_gpu(accuracy_score),
 }

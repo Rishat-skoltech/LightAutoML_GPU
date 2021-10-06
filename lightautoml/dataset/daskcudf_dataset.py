@@ -90,19 +90,6 @@ class DaskCudfDataset(CudfDataset):
             raise ValueError('Data type must be either pd.DataFrame or cudf.DataFrame.')
         super().set_data(data, features, roles)'''
 
-    @staticmethod
-    def _hstack(datasets: Sequence[DataFrame]) -> DataFrame:
-        """Define how to concat features arrays.
-
-        Args:
-            datasets: Sequence of tables.
-
-        Returns:
-            concatenated table.
-
-        """
-        return dask_cudf.concat(datasets, axis=1).persist()
-
     def _check_dtype(self):
         """Check if dtype in .set_data is ok and cast if not."""
         date_columns = []
@@ -205,13 +192,13 @@ class DaskCudfDataset(CudfDataset):
 
         """
         cols = []
+        res_datasets = []
         for i, data in enumerate(datasets):
-            cols.extend(data.columns)
+            if data is not None:
+                cols.extend(data.columns)
+                res_datasets.append(data)
 
-        #for data in datasets:
-        #    print(data.compute())
-
-        res = dask_cudf.concat(datasets, axis=1)
+        res = dask_cudf.concat(res_datasets, axis=1)
         mapper = dict(zip(np.arange(len(cols)), cols))
         res = res.rename(columns=mapper)
         return res

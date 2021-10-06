@@ -117,20 +117,20 @@ def test_pipeline():
     #target, _, data = generate_data(n=200, n_num=3, n_cat=2, n_date=5,
     #                                n_str=5, max_n_cat=10)
                                     
-    data = pd.read_csv('./application_train.csv')
+    data = pd.read_csv('./jobs_train.csv')
 
-    data['BIRTH_DATE'] = (np.datetime64('2018-01-01') + data['DAYS_BIRTH'].astype(np.dtype('timedelta64[D]'))).astype(str)
-    data['EMP_DATE'] = (np.datetime64('2018-01-01') + np.clip(data['DAYS_EMPLOYED'], None, 0).astype(np.dtype('timedelta64[D]'))
-                       ).astype(str)
+    #data['BIRTH_DATE'] = (np.datetime64('2018-01-01') + data['DAYS_BIRTH'].astype(np.dtype('timedelta64[D]'))).astype(str)
+    #data['EMP_DATE'] = (np.datetime64('2018-01-01') + np.clip(data['DAYS_EMPLOYED'], None, 0).astype(np.dtype('timedelta64[D]'))
+    #                   ).astype(str)
     #data['BIRTH_DATE'] = np.datetime64('2018-01-01') + data['DAYS_BIRTH'].astype(np.dtype('timedelta64[D]'))
     #data['EMP_DATE'] = np.datetime64('2018-01-01') + np.clip(data['DAYS_EMPLOYED'], None, 0).astype(np.dtype('timedelta64[D]'))
 
-    data['constant'] = 1
-    data['allnan'] = np.nan
+    #data['constant'] = 1
+    #data['allnan'] = np.nan
 
-    data.drop(['DAYS_BIRTH',  'DAYS_EMPLOYED'], axis = 1, inplace = True)
+    #data.drop(['DAYS_BIRTH',  'DAYS_EMPLOYED'], axis = 1, inplace = True)
     print(len(data))
-    data[TARGET_NAME] = pd.Series(np.random.randint(0, 4, len(data)))
+    #data[TARGET_NAME] = pd.Series(np.random.randint(0, 4, len(data)))
 
     #data = data.sample(100000).reset_index(drop=True)
     #data = pd.concat([data, data]).reset_index(drop=True)
@@ -184,7 +184,7 @@ def test_pipeline():
         post_selection=None
     )
 
-    task = Task('multiclass', metric = 'crossentropy', device='gpu') 
+    task = Task('binary', metric = 'logloss', device='gpu') 
     reader = CudfReader(task = task, device_num = 0, samples = 100000,  max_nan_rate = 1,
                               max_constant_rate = 1, advanced_roles = True,
                               drop_score_co = -1, n_jobs = 1)
@@ -200,10 +200,10 @@ def test_pipeline():
 
     logging.info('oof_pred:\n{}\nShape = {}'.format(oof_pred, oof_pred.shape))
 
-    cudf_test  = data_cudf.sample(10000).reset_index(drop=True)
+    '''cudf_test  = data_cudf.sample(10000).reset_index(drop=True)
     st = perf_counter()
     test_res = automl.predict(cudf_test)
-    print(perf_counter() - st, "predict time")
+    print(perf_counter() - st, "predict time")'''
 
 if __name__ == "__main__":
     cudf.set_allocator("managed")

@@ -233,9 +233,9 @@ class TabularMLAlgo_gpu(TabularMLAlgo):
 
             pred = self.predict_single_fold(model, dataset)
 
-            if isinstance(pred, (dask_cudf.DataFrame, dd.DataFrame)):
+            if isinstance(pred, (dask_cudf.DataFrame, dd.DataFrame, dask_cudf.Series, dd.Series)):
                 pred = pred.compute().values
-            elif isinstance(pred, cudf.DataFrame):
+            elif isinstance(pred, (cudf.DataFrame, cudf.Series)):
                 pred = pred.values
 
             if preds_arr is None:
