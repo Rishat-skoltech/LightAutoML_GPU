@@ -1,28 +1,38 @@
 """Tokenizer classes for text preprocesessing and tokenization."""
 
 import re
+
 from functools import partial
 from multiprocessing import Pool
-from typing import Sequence, Union, List, Optional, Any
+from typing import Any
+from typing import List
+from typing import Optional
+from typing import Sequence
+from typing import Union
 
-import nltk
-from log_calls import record_history
-from nltk.stem import SnowballStemmer
 
-from .abbreviations import ABBREVIATIONS
+try:
+    import nltk
+
+    from nltk.stem import SnowballStemmer
+except:
+    import warnings
+
+    warnings.warn("'nltk' - package isn't installed")
+
+
 from ..dataset.base import RolesDict
 from ..dataset.roles import ColumnRole
+
 
 Roles = Union[Sequence[ColumnRole], ColumnRole, RolesDict, None]
 
 
-@record_history(enabled=False)
 def tokenizer_func(arr, tokenizer):
     """Additional tokenizer function."""
     return [tokenizer._tokenize(x) for x in arr]
 
 
-@record_history(enabled=False)
 class BaseTokenizer:
     """Base class for tokenizer method."""
 
@@ -63,7 +73,7 @@ class BaseTokenizer:
             Resulting list of tokens.
 
         """
-        return snt.split(' ')
+        return snt.split(" ")
 
     def filter_tokens(self, snt: List[str]) -> List[str]:
         """Clean list of sentence tokens.
@@ -117,7 +127,7 @@ class BaseTokenizer:
         res = self.postprocess_tokens(res)
 
         if self.to_string:
-            res = ' '.join(res)
+            res = " ".join(res)
             res = self.postprocess_sentence(res)
         return res
 
@@ -161,7 +171,7 @@ class BaseTokenizer:
         """
         idx = list(range(0, len(snt), len(snt) // self.n_jobs + 1)) + [len(snt)]
 
-        parts = [snt[i: j] for (i, j) in zip(idx[:-1], idx[1:])]
+        parts = [snt[i:j] for (i, j) in zip(idx[:-1], idx[1:])]
 
         f = partial(tokenizer_func, tokenizer=self)
         with Pool(self.n_jobs) as p:
@@ -174,16 +184,20 @@ class BaseTokenizer:
         return tokens
 
 
-@record_history(enabled=False)
 class SimpleRuTokenizer(BaseTokenizer):
     """Russian tokenizer."""
 
-    def __init__(self, n_jobs: int = 4, to_string: bool = True,
-                 stopwords: Optional[Union[bool, Sequence[str]]] = False,
-                 is_stemmer: bool = True, **kwargs: Any):
+    def __init__(
+        self,
+        n_jobs: int = 4,
+        to_string: bool = True,
+        stopwords: Optional[Union[bool, Sequence[str]]] = False,
+        is_stemmer: bool = True,
+        **kwargs: Any
+    ):
         """Tokenizer for Russian language.
 
-        Include numeric, abbreviations, punctuation and short word filtering.
+        Include numeric, punctuation and short word filtering.
         Use stemmer by default and do lowercase.
 
         Args:
@@ -200,11 +214,11 @@ class SimpleRuTokenizer(BaseTokenizer):
         if isinstance(stopwords, (tuple, list, set)):
             self.stopwords = set(stopwords)
         elif stopwords:
-            self.stopwords = set(nltk.corpus.stopwords.words('russian'))
+            self.stopwords = set(nltk.corpus.stopwords.words("russian"))
         else:
             self.stopwords = {}
 
-        self.stemmer = SnowballStemmer('russian', ignore_stopwords=len(self.stopwords) > 0) if is_stemmer else None
+        self.stemmer = SnowballStemmer("russian", ignore_stopwords=len(self.stopwords) > 0) if is_stemmer else None
 
     @staticmethod
     def _is_abbr(word: str) -> bool:
@@ -223,9 +237,9 @@ class SimpleRuTokenizer(BaseTokenizer):
 
         """
         snt = snt.strip()
-        snt = snt.replace('Ё', 'Е').replace('ё', 'е')
-        s = re.sub('[^A-Za-zА-Яа-я0-9]+', ' ', snt)
-        s = re.sub(r'^\d+\s|\s\d+\s|\s\d+$', ' ', s)
+        snt = snt.replace("Ё", "Е").replace("ё", "е")
+        s = re.sub("[^A-Za-zА-Яа-я0-9]+", " ", snt)
+        s = re.sub(r"^\d+\s|\s\d+\s|\s\d+$", " ", s)
         return s
 
     def tokenize_sentence(self, snt: str) -> List[str]:
@@ -238,7 +252,7 @@ class SimpleRuTokenizer(BaseTokenizer):
             Resulting list of tokens.
 
         """
-        return snt.split(' ')
+        return snt.split(" ")
 
     def filter_tokens(self, snt: List[str]) -> List[str]:
         """Clean list of sentence tokens.
@@ -259,8 +273,6 @@ class SimpleRuTokenizer(BaseTokenizer):
                 pass
             elif w.lower() in self.stopwords:
                 pass
-            elif w.lower() in ABBREVIATIONS:
-                filtered_s.extend(ABBREVIATIONS[w.lower()].split())
             elif self._is_abbr(w):
                 filtered_s.append(w)
             # ignore short words
@@ -295,18 +307,22 @@ class SimpleRuTokenizer(BaseTokenizer):
             Resulting string.
 
         """
-        snt = (' '+snt).replace(' не ', ' не')
-        snt = snt.replace(' ни ', ' ни')
+        snt = (" " + snt).replace(" не ", " не")
+        snt = snt.replace(" ни ", " ни")
         return snt[1:]
 
 
-@record_history(enabled=False)
 class SimpleEnTokenizer(BaseTokenizer):
     """English tokenizer."""
 
-    def __init__(self, n_jobs: int = 4, to_string: bool = True,
-                 stopwords: Optional[Union[bool, Sequence[str]]] = False,
-                 is_stemmer: bool = True, **kwargs: Any):
+    def __init__(
+        self,
+        n_jobs: int = 4,
+        to_string: bool = True,
+        stopwords: Optional[Union[bool, Sequence[str]]] = False,
+        is_stemmer: bool = True,
+        **kwargs: Any
+    ):
         """Tokenizer for English language.
 
         Args:
@@ -323,11 +339,11 @@ class SimpleEnTokenizer(BaseTokenizer):
         if isinstance(stopwords, (tuple, list, set)):
             self.stopwords = set(stopwords)
         elif stopwords:
-            self.stopwords = set(nltk.corpus.stopwords.words('english'))
+            self.stopwords = set(nltk.corpus.stopwords.words("english"))
         else:
             self.stopwords = {}
 
-        self.stemmer = SnowballStemmer('english', ignore_stopwords=len(self.stopwords) > 0) if is_stemmer else None
+        self.stemmer = SnowballStemmer("english", ignore_stopwords=len(self.stopwords) > 0) if is_stemmer else None
 
     def preprocess_sentence(self, snt: str) -> str:
         """Preprocess sentence string (lowercase, etc.).
@@ -340,8 +356,8 @@ class SimpleEnTokenizer(BaseTokenizer):
 
         """
         snt = snt.strip()
-        s = re.sub('[^A-Za-zА-Яа-я0-9]+', ' ', snt)
-        s = re.sub(r'^\d+\s|\s\d+\s|\s\d+$', ' ', s)
+        s = re.sub("[^A-Za-zА-Яа-я0-9]+", " ", snt)
+        s = re.sub(r"^\d+\s|\s\d+\s|\s\d+$", " ", s)
         return s
 
     def tokenize_sentence(self, snt: str) -> List[str]:
@@ -354,7 +370,7 @@ class SimpleEnTokenizer(BaseTokenizer):
             Resulting list of tokens.
 
         """
-        return snt.split(' ')
+        return snt.split(" ")
 
     def filter_tokens(self, snt: List[str]) -> List[str]:
         """Clean list of sentence tokens.

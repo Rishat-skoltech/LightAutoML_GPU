@@ -1,28 +1,56 @@
 """Image feature extractors based on color histograms and CNN embeddings."""
 
 from copy import copy
-from typing import List, Callable, Sequence, Optional, Any, Union
+from typing import Any
+from typing import Callable
+from typing import List
+from typing import Optional
+from typing import Sequence
+from typing import Union
 
-import cv2
+
+try:
+    import cv2
+except:
+    import warnings
+
+    warnings.warn("'cv2' - package isn't installed")
+
 import numpy as np
 import torch
 import torch.nn as nn
-from albumentations import Compose, Normalize, Resize
-from albumentations.pytorch import ToTensorV2
-from efficientnet_pytorch import EfficientNet
-from joblib import Parallel, delayed
-from log_calls import record_history
+
+
+try:
+    from albumentations import Compose
+    from albumentations import Normalize
+    from albumentations import Resize
+    from albumentations.pytorch import ToTensorV2
+except:
+    import warnings
+
+    warnings.warn("'albumentations' - package isn't installed")
+try:
+    from efficientnet_pytorch import EfficientNet
+except:
+    import warnings
+
+    warnings.warn("'efficientnet_pytorch' - package isn't installed")
+
+from joblib import Parallel
+from joblib import delayed
 from sklearn.base import TransformerMixin
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from ..text.utils import parse_devices
+from ..text.utils import seed_everything
 from .utils import pil_loader
-from ..text.utils import seed_everything, parse_devices
+
 
 numeric = Union[int, float]
 
 
-@record_history(enabled=False)
 class ColorFeatures:
     """Basic class to compute color features."""
 
@@ -38,7 +66,7 @@ class ColorFeatures:
         """
         self.hist_size = hist_size
         self.is_hsv = is_hsv
-        self._f_names = ['h', 's', 'v'] if self.is_hsv else ['r', 'g', 'b']
+        self._f_names = ["h", "s", "v"] if self.is_hsv else ["r", "g", "b"]
 
     def compute_histogram(self, img: np.ndarray) -> List[numeric]:
         """Compute normalized color histogram for one channel.
@@ -51,10 +79,7 @@ class ColorFeatures:
 
         """
         # TODO: add value range check
-        hist = cv2.calcHist([img], [0],
-                            mask=None,
-                            histSize=[self.hist_size],
-                            ranges=(0, 255))[:, 0]
+        hist = cv2.calcHist([img], [0], mask=None, histSize=[self.hist_size], ranges=(0, 255))[:, 0]
 
         return list(hist / hist.sum())
 
@@ -65,7 +90,11 @@ class ColorFeatures:
             List of features names.
 
         """
-        return [j for i in [['color_' + j + '_' + str(i) for i in np.arange(self.hist_size)] for j in self._f_names] for j in i]
+        return [
+            j
+            for i in [["color_" + j + "_" + str(i) for i in np.arange(self.hist_size)] for j in self._f_names]
+            for j in i
+        ]
 
     def get_features(self, img: np.ndarray) -> List[numeric]:
         """Calculate normalized color histogram for rgb or hsv image.
@@ -89,11 +118,16 @@ class ColorFeatures:
         return res
 
 
-@record_history(enabled=False)
 class CreateImageFeatures:
     """Class for parallel histogram computation."""
 
-    def __init__(self, hist_size: int = 30, is_hsv: bool = True, n_jobs: int = 4, loader: Callable = pil_loader):
+    def __init__(
+        self,
+        hist_size: int = 30,
+        is_hsv: bool = True,
+        n_jobs: int = 4,
+        loader: Callable = pil_loader,
+    ):
         """Create normalized color histogram for rgb or hsv image.
 
         Args:
@@ -137,12 +171,16 @@ class CreateImageFeatures:
         return np.vstack(res)
 
 
-@record_history(enabled=False)
 class EffNetImageEmbedder(nn.Module):
     """Class to compute EfficientNet embeddings."""
 
-    def __init__(self, model_name: str = 'efficientnet-b0', weights_path: Optional[str] = None, is_advprop: bool = True,
-                 device=torch.device('cuda:0')):
+    def __init__(
+        self,
+        model_name: str = "efficientnet-b0",
+        weights_path: Optional[str] = None,
+        is_advprop: bool = True,
+        device=torch.device("cuda:0"),
+    ):
         """Pytorch module for image embeddings based on efficient-net model.
 
         Args:
@@ -154,8 +192,16 @@ class EffNetImageEmbedder(nn.Module):
         """
         super(EffNetImageEmbedder, self).__init__()
         self.device = device
-        self.model = EfficientNet.from_pretrained(model_name, weights_path=weights_path, advprop=is_advprop,
-                                                  include_top=False).eval().to(self.device)
+        self.model = (
+            EfficientNet.from_pretrained(
+                model_name,
+                weights_path=weights_path,
+                advprop=is_advprop,
+                include_top=False,
+            )
+            .eval()
+            .to(self.device)
+        )
         self.feature_shape = self.get_shape()
         self.is_advprop = is_advprop
         self.model_name = model_name
@@ -175,11 +221,15 @@ class EffNetImageEmbedder(nn.Module):
         return out[:, :, 0, 0]
 
 
-@record_history(enabled=False)
 class ImageDataset:
     """Image Dataset Class."""
 
-    def __init__(self, data: Sequence[str], is_advprop: bool = True, loader: Callable = pil_loader):
+    def __init__(
+        self,
+        data: Sequence[str],
+        is_advprop: bool = True,
+        loader: Callable = pil_loader,
+    ):
         """Pytorch Dataset for :class:`~lightautoml.image.EffNetImageEmbedder`.
 
         Args:
@@ -189,28 +239,39 @@ class ImageDataset:
 
         """
         self.X = data
-        self.transforms = Compose([Resize(224, 224),
-                                   Normalize([0.5] * 3, [0.5] * 3) if is_advprop else Normalize(),
-                                   ToTensorV2()
-                                   ])
+        self.transforms = Compose(
+            [
+                Resize(224, 224),
+                Normalize([0.5] * 3, [0.5] * 3) if is_advprop else Normalize(),
+                ToTensorV2(),
+            ]
+        )
         self.loader = loader
 
     def __getitem__(self, idx: int) -> np.ndarray:
         path = self.X[idx]
         img = np.array(self.loader(path))
-        img = self.transforms(image=img)['image']
+        img = self.transforms(image=img)["image"]
         return img
 
     def __len__(self):
         return len(self.X)
 
 
-@record_history(enabled=False)
 class DeepImageEmbedder(TransformerMixin):
     """Transformer for image embeddings."""
 
-    def __init__(self, device: torch.device = torch.device('cuda:0'), n_jobs=4, random_state=42, is_advprop=True,
-                 model_name='efficientnet-b0', weights_path: Optional[str] = None, batch_size: int = 128, verbose: bool = True):
+    def __init__(
+        self,
+        device: torch.device = torch.device("cuda:0"),
+        n_jobs=4,
+        random_state=42,
+        is_advprop=True,
+        model_name="efficientnet-b0",
+        weights_path: Optional[str] = None,
+        batch_size: int = 128,
+        verbose: bool = True,
+    ):
         """Pytorch Dataset for :class:`~lightautoml.image.EffNetImageEmbedder`.
 
         Args:
@@ -225,7 +286,7 @@ class DeepImageEmbedder(TransformerMixin):
 
         """
         super(DeepImageEmbedder, self).__init__()
-        assert model_name in {f'efficientnet-b{i}' for i in range(8)}
+        assert model_name in {f"efficientnet-b{i}" for i in range(8)}
 
         self.device, self.device_ids = parse_devices(device)
         self.random_state = random_state

@@ -1,16 +1,16 @@
 """Selectors for linear models."""
 
-from typing import Union, Optional
+from typing import Optional
+from typing import Union
 
 import numpy as np
-from log_calls import record_history
+
 from scipy.sparse import linalg as sp_linalg
 
-from .base import SelectionPipeline
 from ...validation.base import TrainValidIterator
+from .base import SelectionPipeline
 
 
-@record_history(enabled=False)
 class HighCorrRemoval(SelectionPipeline):
     """Selector to remove highly correlated features.
 
@@ -20,8 +20,7 @@ class HighCorrRemoval(SelectionPipeline):
 
     """
 
-    def __init__(self, corr_co: float = 0.98, subsample: Union[int, float] = 100000,
-                 random_state: int = 42, **kwargs):
+    def __init__(self, corr_co: float = 0.98, subsample: Union[int, float] = 100000, random_state: int = 42, **kwargs):
         """
 
         Args:

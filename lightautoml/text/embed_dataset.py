@@ -1,13 +1,21 @@
 """Pytorch Datasets for text features."""
 
-from typing import Dict, Sequence, Any, Union
+from typing import Any
+from typing import Dict
+from typing import Sequence
+from typing import Union
 
 import numpy as np
-from log_calls import record_history
-from transformers import AutoTokenizer
 
 
-@record_history(enabled=False)
+try:
+    from transformers import AutoTokenizer
+except:
+    import warnings
+
+    warnings.warn("'transformers' - package isn't installed")
+
+
 class BertDataset:
     """Dataset class with transformers tokenization."""
 
@@ -26,17 +34,17 @@ class BertDataset:
 
     def __getitem__(self, idx: int) -> Dict[str, np.ndarray]:
         sent = self.sentences[idx]
-        _split = sent.split('[SEP]')
+        _split = sent.split("[SEP]")
         sent = _split if len(_split) == 2 else (sent,)
-        data = self.tokenizer.encode_plus(*sent, add_special_tokens=True, max_length=self.max_length,
-                                          padding='max_length', truncation=True)
+        data = self.tokenizer.encode_plus(
+            *sent, add_special_tokens=True, max_length=self.max_length, padding="max_length", truncation=True
+        )
         return {i: np.array(data[i]) for i in data.keys()}
 
     def __len__(self) -> int:
         return len(self.sentences)
 
 
-@record_history(enabled=False)
 class EmbedDataset:
     """Dataset class for extracting word embeddings."""
 
@@ -66,7 +74,7 @@ class EmbedDataset:
                 length += 1
                 if length >= self.max_length:
                     break
-        return {'text': result, 'length': length if length > 0 else 1}
+        return {"text": result, "length": length if length > 0 else 1}
 
     def __len__(self) -> int:
         return len(self.sentences)

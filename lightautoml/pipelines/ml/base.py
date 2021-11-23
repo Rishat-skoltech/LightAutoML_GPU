@@ -1,20 +1,25 @@
 """Base classes for MLPipeline."""
 
-from typing import Sequence, Optional, Tuple, Union, List
-
-from log_calls import record_history
+from typing import List
+from typing import Optional
+from typing import Sequence
+from typing import Tuple
+from typing import Union
 
 from lightautoml.validation.base import TrainValidIterator
-from ..features.base import FeaturesPipeline, EmptyFeaturePipeline
-from ..selection.base import SelectionPipeline, EmptySelector
+
 from ...dataset.base import LAMLDataset
 from ...dataset.utils import concatenate
 from ...ml_algo.base import MLAlgo
-from ...ml_algo.tuning.base import ParamsTuner, DefaultTuner
+from ...ml_algo.tuning.base import DefaultTuner
+from ...ml_algo.tuning.base import ParamsTuner
 from ...ml_algo.utils import tune_and_fit_predict
+from ..features.base import EmptyFeaturePipeline
+from ..features.base import FeaturesPipeline
+from ..selection.base import EmptySelector
+from ..selection.base import SelectionPipeline
 
 
-@record_history(enabled=False)
 class MLPipeline:
     """Single ML pipeline.
 
@@ -43,12 +48,14 @@ class MLPipeline:
     def used_features(self) -> List[str]:
         return self.pre_selection.selected_features
 
-    def __init__(self, ml_algos: Sequence[Union[MLAlgo, Tuple[MLAlgo, ParamsTuner]]],
-                 force_calc: Union[bool, Sequence[bool]] = True,
-                 pre_selection: Optional[SelectionPipeline] = None,
-                 features_pipeline: Optional[FeaturesPipeline] = None,
-                 post_selection: Optional[SelectionPipeline] = None
-                 ):
+    def __init__(
+        self,
+        ml_algos: Sequence[Union[MLAlgo, Tuple[MLAlgo, ParamsTuner]]],
+        force_calc: Union[bool, Sequence[bool]] = True,
+        pre_selection: Optional[SelectionPipeline] = None,
+        features_pipeline: Optional[FeaturesPipeline] = None,
+        post_selection: Optional[SelectionPipeline] = None,
+    ):
 
         """
 
@@ -90,14 +97,14 @@ class MLPipeline:
                 # case when only model is definded
                 mod, tuner = mt_pair, DefaultTuner()
 
-            mod.set_prefix('Mod_{0}'.format(n))
+            mod.set_prefix("Mod_{0}".format(n))
 
             self._ml_algos.append(mod)
             self.params_tuners.append(tuner)
 
         self.force_calc = [force_calc] * len(self._ml_algos) if type(force_calc) is bool else force_calc
         # TODO: Do we need this assert?
-        assert any(self.force_calc), 'At least single algo in pipe should be forced to calc'
+        assert any(self.force_calc), "At least single algo in pipe should be forced to calc"
 
     def fit_predict(self, train_valid: TrainValidIterator) -> LAMLDataset:
         """Fit on train/valid iterator and transform on validation part.
@@ -112,13 +119,10 @@ class MLPipeline:
         self.ml_algos = []
         # train and apply pre selection
         train_valid = train_valid.apply_selector(self.pre_selection)
-
         # apply features pipeline
         train_valid = train_valid.apply_feature_pipeline(self.features_pipeline)
-
         # train and apply post selection
         train_valid = train_valid.apply_selector(self.post_selection)
-
         predictions = []
 
         for ml_algo, param_tuner, force_calc in zip(self._ml_algos, self.params_tuners, self.force_calc):
@@ -128,7 +132,9 @@ class MLPipeline:
 
                 predictions.append(preds)
 
-        assert len(predictions) > 0, 'Pipeline finished with 0 models for some reason.\nProbably one or more models failed'
+        assert (
+            len(predictions) > 0
+        ), "Pipeline finished with 0 models for some reason.\nProbably one or more models failed"
 
         predictions = concatenate(predictions)
 
