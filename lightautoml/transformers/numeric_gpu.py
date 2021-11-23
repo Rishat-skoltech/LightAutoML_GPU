@@ -98,6 +98,8 @@ class NaNFlags_gpu(LAMLTransformer):
 
             # create resulted
             output.set_data(new_arr, self.features, NumericRole(np.float32))
+        else:
+            return None
 
         return output
 
