@@ -130,15 +130,25 @@ class LinearLBFGS_gpu(TabularMLAlgo_gpu):
 
         suggested_params = copy(self.default_params)
         train = train_valid_iterator.train
-        suggested_params['categorical_idx'] = [
-            x for x in train.features if train.roles[x].name == 'Category'
-        ]
+        if type(train) == CupyDataset:
+            suggested_params['categorical_idx'] = [
+               i for i,x in enumerate(train.features) if train.roles[x].name == 'Category'
+            ]
+        else:
+            suggested_params['categorical_idx'] = [
+                x for x in train.features if train.roles[x].name == 'Category'
+            ]
         suggested_params['embed_sizes'] = ()
 
         if len(suggested_params['categorical_idx']) > 0:
-            suggested_params['embed_sizes'] = (
-                train.data[suggested_params['categorical_idx']].astype(cp.int32).max(axis=0) + 1
-            )
+            if type(train) == CupyDataset:
+                suggested_params['embed_sizes'] = (
+                    cp.asnumpy(train.data[:,suggested_params['categorical_idx']].astype(cp.int32).max(axis=0)) + 1
+                )
+            else:
+                suggested_params['embed_sizes'] = (
+                    train.data[suggested_params['categorical_idx']].astype(cp.int32).max(axis=0) + 1
+                )
             if type(train) == DaskCudfDataset:
                 suggested_params['embed_sizes'] = suggested_params['embed_sizes'].compute()
         suggested_params['data_size'] = train.shape[1]

@@ -171,10 +171,11 @@ class FoldsIterator_gpu(TrainValidIterator):
             new hold-out-iterator.
 
         """
-
-        val_idx = (self.train.folds.values == 0)
-        if type(self.train) == DaskCudfDataset:
-            val_idx = val_idx.compute()
+        val_idx = (self.train.folds == 0)
+        if type(self.train) == CudfDataset:
+            val_idx = val_idx.values
+        elif type(self.train) == DaskCudfDataset:
+            val_idx = val_idx.compute().values
 
         tr_idx = cp.logical_not(val_idx)
         idx = cp.arange(self.train.shape[0])

@@ -71,7 +71,6 @@ class CatLinear(nn.Module):
         # add categories if it is defined
         self.cat_params = None
         if len(embed_sizes) > 0:
-
             self.cat_params = nn.Parameter(torch.zeros(embed_sizes.sum(), output_size).cuda())
             self.register_buffer('embed_idx',
                  torch.LongTensor(embed_sizes).cumsum(dim=0) - torch.LongTensor(embed_sizes))

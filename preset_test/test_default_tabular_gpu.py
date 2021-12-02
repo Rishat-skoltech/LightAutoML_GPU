@@ -38,7 +38,8 @@ task_types = {'covertype.csv' : 'multiclass' , 'albert.csv' : 'binary',
              }
 
 print(csv_files)
-cur_file = csv_files[1]
+#cur_file = csv_files[1]
+cur_file = "jobs_train.csv"
 
 data = pd.read_csv(cur_file)
 for col in data.columns:
@@ -46,11 +47,12 @@ for col in data.columns:
         data[col] = data[col].replace('?', np.nan).astype(np.float32)
 # run automl
 # this is for small amounts of data
-automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="gpu"))
+automl = TabularAutoML_gpu(task=Task('binary', device="gpu"))
+#automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="gpu"))
 # this is for bigger amounts of data
 #automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="mgpu"))
 
-oof_predictions = automl.fit_predict(data, roles={TargetRole():TARGETS_DICT[cur_file]}, verbose=2)
+oof_predictions = automl.fit_predict(data, roles={TargetRole():'target'}, verbose=2)
 
 print("NOW DOING PREDICTIONS")
 
