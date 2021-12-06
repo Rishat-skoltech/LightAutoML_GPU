@@ -287,7 +287,10 @@ class LogOdds_gpu(LAMLTransformer):
         output = cp.clip(data.values, 1e-7, 1-1e-7)
         output = cp.log(output / (1 - output))
 
-        return cudf.DataFrame(output, columns=self.features, index=data.index)
+        if data.shape[0] > 0:
+            return cudf.DataFrame(output, columns=self.features, index=data.index)
+        else:
+            return cudf.DataFrame([], columns = self.features)
 
     def _transform_cupy(self, dataset: CupyTransformable) -> CupyDataset:
 

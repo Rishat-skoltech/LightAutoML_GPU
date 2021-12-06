@@ -185,6 +185,25 @@ class TabularAutoML_gpu(AutoMLPreset):
 
     def infer_auto_params(self, train_data: DataFrame, multilevel_avail: bool = False):
 
+
+        try:
+            val = self.general_params["parallel_folds"]
+        except KeyError:
+            val = False
+
+        try:
+            res = self.lgb_params["parallel_folds"]
+        except KeyError:
+            self.lgb_params["parallel_folds"] = val
+        try:
+            res = self.cb_params["parallel_folds"]
+        except KeyError:
+            self.cb_params["parallel_folds"] = val
+        try:
+            res = self.linear_l2_params["parallel_folds"]
+        except KeyError:
+            self.linear_l2_params["parallel_folds"] = val
+
         length = train_data.shape[0]
 
         # infer optuna tuning iteration based on dataframe len
@@ -209,15 +228,19 @@ class TabularAutoML_gpu(AutoMLPreset):
             self.nested_cv_params["cv"] = 1
 
         # check gpu to use catboost
-        gpu_cnt = torch.cuda.device_count()
+        if self.task.device == 'gpu' or self.cb_params["parallel_folds"]:
+            gpu_cnt = 1
+        else:
+            gpu_cnt = torch.cuda.device_count()
         gpu_ids = self.gpu_ids
+
         if gpu_cnt > 0 and gpu_ids:
-            if gpu_ids == "all":
-                gpu_ids = ",".join(list(map(str, range(gpu_cnt))))
+            #if gpu_ids == "all":
+            #    gpu_ids = ",".join(list(map(str, range(gpu_cnt))))
+            gpu_ids = ",".join(list(map(str, range(gpu_cnt))))
 
             self.cb_params["default_params"]["task_type"] = "GPU"
             self.cb_params["default_params"]["devices"] = gpu_ids.replace(",", ":")
-
         # check all n_jobs params
         cpu_cnt = min(os.cpu_count(), self.cpu_limit)
         torch.set_num_threads(cpu_cnt)
@@ -229,6 +252,9 @@ class TabularAutoML_gpu(AutoMLPreset):
             self.lgb_params["default_params"]["nthread"], cpu_cnt
         )
         self.reader_params["n_jobs"] = min(self.reader_params["n_jobs"], cpu_cnt)
+        if not self.linear_l2_params["parallel_folds"] and self.task.device=="mgpu":
+            self.reader_params["output"] = "mgpu"
+
 
     def get_time_score(self, n_level: int, model_type: str, nested: Optional[bool] = None):
 
@@ -237,15 +263,20 @@ class TabularAutoML_gpu(AutoMLPreset):
 
         score = self._time_scores[model_type]
 
+        if self.task.device == "gpu":
+            num_gpus = 1
+        else:
+            num_gpus = torch.cuda.device_count()
+
         if model_type in ["cb", "cb_tuned"]:
             if self.cb_params["parallel_folds"]:
-                score /= torch.cuda.device_count()
+                score /= num_gpus
         if model_type in ["lgb", "lgb_tuned"]:
             if self.lgb_params["parallel_folds"]:
-                score /= torch.cuda.device_count()
+                score /= num_gpus
         if model_type=="linear_l2":
             if self.linear_l2_params["parallel_folds"]:
-                score /= torch.cuda.device_count()
+                score /= num_gpus
 
         mult = 1
         if nested:
@@ -583,7 +614,7 @@ class TabularAutoML_gpu(AutoMLPreset):
             with Parallel(n_jobs, pre_dispatch=len(data_generator) + 1) as p:
                 res = p(delayed(self.predict)(df, features_names, return_all_predictions) for df in data_generator)
 
-        res = CumpyDataset(
+        res = CupyDataset(
             cp.concatenate([x.data for x in res], axis=0),
             features=res[0].features,
             roles=res[0].roles,

@@ -14,6 +14,8 @@ general_params:
   return_all_predictions: False
   # The smallest weight in weighted blender (if lower - the algo will be dropped from final model)
   weighted_blender_max_nonzero_coef: 0.05
+  # If we should try to parallelize multigpu usage across parallel folds
+  parallel_folds: True
 
 reader_params:
   # sample of data to perform analysis
@@ -23,10 +25,11 @@ reader_params:
   # maximum frequency of top frequent value to keep feature
   max_constant_rate: 0.999
   # create validation folds. Folds will be created even if valid samples or custom validation will be passed
-  num_cpu_readers: 3
-  num_gpu_readers: 1
-  gpu_ratio: 0.5
-  output: "gpu"
+  #num_cpu_readers: 3
+  #num_gpu_readers: 1
+  #gpu_ratio: 0.5
+  index_ok: True
+  npartitions: 4
   # it will be used for feature generation
   cv: 2
   # random state for folds creation
@@ -95,9 +98,10 @@ tuning_params:
   fit_on_holdout: True
   # max tuning iter for lightgbm. Auto - depends on dataset
   # smaller dataset gets more iters (int or 'auto')
+  #max_tuning_iter: 101
   max_tuning_iter: 0
   # max tuning time. Tuning time might be set lower during train by automl's timer, but cannot be higher
-  max_tuning_time: 0
+  max_tuning_time: 300
 
 # params for BoostXGB MLAlgo. Note - params are default and may be changed during train if not freeze_defaults
 lgb_params:
@@ -115,14 +119,13 @@ cb_params:
     task_type: 'GPU'
     thread_count: 100
   freeze_defaults: False
-  parallel_folds: True
+  #parallel_folds: True
 
 # params for LinearLBFGS_gpu MLAlgo
 # no tuner needed for this algo - regularization params are found during fit
 linear_l2_params:
   default_params: { }
   freeze_defaults: False
-  parallel_folds: True
 
 gbm_pipeline_params:
   # max number of categories to generate intersections

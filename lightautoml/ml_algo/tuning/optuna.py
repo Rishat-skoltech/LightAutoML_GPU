@@ -148,7 +148,6 @@ class OptunaTuner(ParamsTuner):
                 callbacks=[update_trial_time],
                 # show_progress_bar=True,
             )
-
             # need to update best params here
             self._best_params = self.study.best_params
             ml_algo.params = self._best_params
@@ -189,7 +188,6 @@ class OptunaTuner(ParamsTuner):
 
         def objective(trial: optuna.trial.Trial) -> float:
             _ml_algo = deepcopy(ml_algo)
-
             optimization_search_space = _ml_algo.optimization_search_space
 
             if not optimization_search_space:
@@ -212,7 +210,6 @@ class OptunaTuner(ParamsTuner):
                 )
 
             output_dataset = _ml_algo.fit_predict(train_valid_iterator=train_valid_iterator)
-
             return _ml_algo.score(output_dataset)
 
         return objective

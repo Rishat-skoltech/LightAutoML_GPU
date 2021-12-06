@@ -110,16 +110,20 @@ class LinearLBFGS_gpu(TabularMLAlgo_gpu):
             if self.task.device == 'gpu':
                 model = TorchBasedLogisticRegression(output_size=self.n_classes, **params)
             elif self.task.device == 'mgpu':
-                model = TorchBasedLogisticRegression(output_size=self.n_classes, **params)
-                #model = TLR_dask(output_size=self.n_classes, **params)
+                if self.parallel_folds:
+                    model = TorchBasedLogisticRegression(output_size=self.n_classes, **params)
+                else:
+                    model = TLR_dask(output_size=self.n_classes, **params)
             else:
                 raise ValueError('Device not supported')
         elif self.task.name == 'reg':
             if self.task.device == 'gpu':
                 model = TorchBasedLinearRegression(output_size=1, **params)
             elif self.task.device == 'mgpu':
-                model = TorchBasedLinearRegression(output_size=1, **params)
-                #model = TLinR_dask(output_size=1, **params)
+                if self.parallel_folds:
+                    model = TorchBasedLinearRegression(output_size=1, **params)
+                else:
+                    model = TLinR_dask(output_size=1, **params)
             else:
                 raise ValueError('Device not supported')
         else:
@@ -130,7 +134,8 @@ class LinearLBFGS_gpu(TabularMLAlgo_gpu):
 
         suggested_params = copy(self.default_params)
         train = train_valid_iterator.train
-        if type(train) == CupyDataset:
+
+        if type(train) == CupyDataset or (type(train) == DaskCudfDataset and self.parallel_folds):
             suggested_params['categorical_idx'] = [
                i for i,x in enumerate(train.features) if train.roles[x].name == 'Category'
             ]
@@ -138,12 +143,18 @@ class LinearLBFGS_gpu(TabularMLAlgo_gpu):
             suggested_params['categorical_idx'] = [
                 x for x in train.features if train.roles[x].name == 'Category'
             ]
+
         suggested_params['embed_sizes'] = ()
 
         if len(suggested_params['categorical_idx']) > 0:
             if type(train) == CupyDataset:
                 suggested_params['embed_sizes'] = (
                     cp.asnumpy(train.data[:,suggested_params['categorical_idx']].astype(cp.int32).max(axis=0)) + 1
+                )
+            elif (type(train) == DaskCudfDataset and self.parallel_folds):
+                cat = [x for x in train.features if train.roles[x].name == 'Category']
+                suggested_params['embed_sizes'] = (
+                    train.data[cat].astype(cp.int32).max(axis=0) + 1
                 )
             else:
                 suggested_params['embed_sizes'] = (
@@ -173,7 +184,9 @@ class LinearLBFGS_gpu(TabularMLAlgo_gpu):
         valid_weights = valid.weights
         train_data = train.data
         valid_data = valid.data
-        if type(train) == DaskCudfDataset:
+
+        
+        if type(train) == DaskCudfDataset and self.parallel_folds:
             train_target = train_target.compute().values
             if train_weights is not None:
                 train_weights = train_weights.compute().values
@@ -334,6 +347,7 @@ class LinearL1CD_gpu(TabularMLAlgo_gpu):
         valid_weights = valid.weights
         train_data = train.data
         valid_data = valid.data
+
         if type(train) == DaskCudfDataset:
             train_target = train_target.compute()
             if train_weights is not None:

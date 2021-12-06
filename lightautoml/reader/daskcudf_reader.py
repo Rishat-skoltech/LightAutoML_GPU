@@ -41,9 +41,6 @@ from .guess_roles_gpu import get_null_scores_gpu
 from .utils import set_sklearn_folds
 from .cudf_reader import CudfReader
 
-from time import perf_counter
-
-
 logger = logging.getLogger(__name__)
 
 # roles, how it's passed to automl
@@ -134,7 +131,6 @@ class DaskCudfReader(CudfReader):
 
         """
 
-        st = perf_counter()
         logger.info('Train data shape: {}'.format(train_data.shape))
         parsed_roles, kwargs = self._prepare_roles_and_kwargs(roles, train_data,
                                           roles_parsed = roles_parsed, **kwargs)
@@ -240,7 +236,6 @@ class DaskCudfReader(CudfReader):
         else:
             dataset = DaskCudfDataset(data=train_data[self.used_features],
                              roles=self.roles, index_ok = self.index_ok, task=self.task, **kwargs)
-        print(perf_counter() - st, "dask cudf reader fit_read finisehd")
         return dataset
 
     def _create_target(self, target: Series):

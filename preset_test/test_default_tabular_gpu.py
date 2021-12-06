@@ -37,26 +37,27 @@ task_types = {'covertype.csv' : 'multiclass' , 'albert.csv' : 'binary',
               'jungle_chess_2pcs_raw_endgame_complete.csv' : 'multiclass'
              }
 
-print(csv_files)
-#cur_file = csv_files[1]
-cur_file = "jobs_train.csv"
+if __name__ == "__main__":
+    print(csv_files)
+    #cur_file = csv_files[1]
+    cur_file = "jobs_train.csv"
 
-data = pd.read_csv(cur_file)
-for col in data.columns:
-    if data[col].isin(['?']).any():
-        data[col] = data[col].replace('?', np.nan).astype(np.float32)
-# run automl
-# this is for small amounts of data
-automl = TabularAutoML_gpu(task=Task('binary', device="gpu"))
-#automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="gpu"))
-# this is for bigger amounts of data
-#automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="mgpu"))
+    data = pd.read_csv(cur_file)
+    for col in data.columns:
+        if data[col].isin(['?']).any():
+            data[col] = data[col].replace('?', np.nan).astype(np.float32)
+    # run automl
+    # this is for small amounts of data
+    automl = TabularAutoML_gpu(task=Task('binary', device="mgpu"))
+    #automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="gpu"))
+    # this is for bigger amounts of data
+    #automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="mgpu"))
 
-oof_predictions = automl.fit_predict(data, roles={TargetRole():'target'}, verbose=2)
+    oof_predictions = automl.fit_predict(data, roles={TargetRole():'target'}, verbose=2)
 
-print("NOW DOING PREDICTIONS")
+    #print("NOW DOING PREDICTIONS")
 
-te_pred = automl.predict(data)
+    #te_pred = automl.predict(data)
 
-print(type(oof_predictions))
-print(type(te_pred))
+    print(type(oof_predictions))
+    #print(type(te_pred))

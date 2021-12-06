@@ -43,30 +43,31 @@ class TorchBasedLinearEstimator:
     """
     def _train_distributed(
         self,
-        rank,
-        res_queue,
-        event,
-        world_size,
-        data,
-        y,
-        weights,
-        data_val,
-        y_val,
-        weights_val
+        rank: int = 0,
+        res_queue = None,
+        event = None,
+        world_size = 1,
+        data = None,
+        y = None,
+        weights = None,
+        data_val = None,
+        y_val = None,
+        weights_val = None
     ):
 
-        logger.info(rank, world_size, "rank and world size")
         self._setup(rank, world_size)
         data, data_cat = self._prepare_data_mgpu(data, rank)
         data_val, data_val_cat = self._prepare_data_mgpu(data_val, rank)
 
-        y = torch.as_tensor(y.get_partition(rank).compute().values.astype(cp.float32),
-                            device=f'cuda:{rank}')
-        y_val = y_val.get_partition(rank).compute().values.astype(cp.float32)
-
+        if type(y) != cp.ndarray:
+            y = y.compute().values
+        if type(y_val) !=cp.ndarray:
+            y_val = y_val.compute().values
+        y = torch.as_tensor(y.astype(cp.float32), device=f'cuda:{rank}')
         if weights is not None:
+            if type(weights) != cp.ndarray:
+                weights = weights.compute().values
             weights = torch.as_tensor(weights.astype(cp.float32), device=f'cuda:{rank}')
-
         best_score = -np.inf
         best_model = self.model
         es = 0
@@ -86,22 +87,28 @@ class TorchBasedLinearEstimator:
                 es += 1
             if es >= self.early_stopping:
                 break
-        if rank == 0:
-            res_queue.put(best_model_params)
-            event.wait()
-            if res_queue.empty():
-                self._cleanup()
-        else:
+        if world_size==1:
             self._cleanup()
+            return best_model_params
+        else:
+            if rank == 0:
+                res_queue.put(best_model_params)
+                event.wait()
+                if res_queue.empty():
+                    self._cleanup()
+            else:
+                self._cleanup()
 
     @staticmethod
     def _score_distributed(dist_model, data_val, data_val_cat):
         with torch.set_grad_enabled(False):
             dist_model.eval()
             preds = cp.asarray(dist_model(data_val, data_val_cat))
+            if preds.ndim > 1 and preds.shape[1] == 1:
+                preds = cp.squeeze(preds)
         return preds
 
-    def _score(self, data: cp.ndarray, data_cat: Optional[cp.ndarray], rank) -> cp.ndarray:
+    def _score(self, data: cp.ndarray, data_cat: Optional[cp.ndarray]) -> cp.ndarray:
         """Get predicts to evaluate performance of model.
 
         Args:
@@ -113,18 +120,22 @@ class TorchBasedLinearEstimator:
 
         """
         with torch.set_grad_enabled(False):
-            model = self.model.to(f'cuda:{rank}')
+            model = self.model.to(f'cuda')
             model.eval()
             preds = cp.asarray(model(data, data_cat))
+            if preds.ndim > 1 and preds.shape[1] == 1:
+                preds = cp.squeeze(preds)
 
         return preds
 
     def _prepare_data_mgpu(self, data, rank):
 
-        data_part = data.get_partition(rank).compute()
+        if type(data) == cp.ndarray:
+            data_part = data
+        else:
+            data_part = data.compute()
 
         device_id = f'cuda:{rank}'
-
         if 0 < len(self.categorical_idx) < data.shape[1]:
             # noinspection PyTypeChecker
             data_cat = torch.as_tensor(
@@ -133,10 +144,9 @@ class TorchBasedLinearEstimator:
             )
             data_ = torch.as_tensor(
                 data_part[data_part.columns.difference(self.categorical_idx)]\
-                    .values.astype(cp.float32),
+                 .values.astype(cp.float32),
                 device=device_id
             )
-
             return data_, data_cat
 
         elif len(self.categorical_idx) == 0:
@@ -215,7 +225,7 @@ class TorchBasedLinearEstimator:
         self.loss = loss  # loss(preds, true) -> loss_arr, assume reduction='none'
         self.metric = metric  # metric(y_true, y_preds, sample_weight = None) -> float (greater_is_better)
 
-    def _prepare_data(self, data: ArrayOrSparseMatrix, rank):
+    def _prepare_data(self, data: ArrayOrSparseMatrix):
         """Prepare data based on input type.
 
         Args:
@@ -225,13 +235,13 @@ class TorchBasedLinearEstimator:
             Tuple (numeric_features, cat_features).
 
         """
-        if sparse.issparse(data):
+        if sparse_gpu.issparse(data):
             raise NotImplementedError("sparse data on multi GPU is not yet supported")
 
-        return self._prepare_data_dense(data, rank)
+        return self._prepare_data_dense(data)
 
 
-    def _prepare_data_dense(self, data: cp.ndarray, rank):
+    def _prepare_data_dense(self, data: cp.ndarray):
         """Prepare dense matrix.
 
         Split categorical and numeric features.
@@ -247,21 +257,21 @@ class TorchBasedLinearEstimator:
             # noinspection PyTypeChecker
             data_cat = torch.as_tensor(
                 data[self.categorical_idx].values.astype(cp.int32),
-                device=f'cuda:{rank}'
+                device=f'cuda'
             )
             data = torch.as_tensor(
                 data[data.columns.difference(self.categorical_idx)]\
                     .values.astype(cp.float32),
-                device=f'cuda:{rank}'
+                device=f'cuda'
             )
             return data, data_cat
 
         elif len(self.categorical_idx) == 0:
-            data = torch.as_tensor(data.values.astype(cp.float32), device=f'cuda:{rank}')
+            data = torch.as_tensor(data.values.astype(cp.float32), device=f'cuda')
             return data, None
 
         else:
-            data_cat = torch.as_tensor(data.values.astype(cp.int32), device=f'cuda:{rank}')
+            data_cat = torch.as_tensor(data.values.astype(cp.int32), device=f'cuda')
             return None, data_cat
 
     def _optimize(self, dist_model, data: torch.Tensor,
@@ -336,47 +346,62 @@ class TorchBasedLinearEstimator:
                     weights: Optional[cp.ndarray] = None,
                     data_val: Optional[dask_cudf.DataFrame] = None,
                     y_val: Optional[dask_cudf.DataFrame] = None,
-                    weights_val: Optional[cp.ndarray] = None):
+                    weights_val: Optional[cp.ndarray] = None,
+                    dev_id: int = None):
 
         assert self.model is not None, 'Model should be defined'
 
         world_size = torch.cuda.device_count()
-        ctx = mp.get_context('spawn')
-        result_queue = ctx.Queue()
-        event = ctx.Event()
-        ctx = mp.spawn(self._train_distributed, args=(result_queue,
-                                                      event,
-                                                      world_size,
-                                                      data, y,
-                                                      weights,
-                                                      data_val,
-                                                      y_val,
-                                                      weights_val),
-                       nprocs=world_size,
-                       join=False)
+        if world_size==1:
+            state_dict = self._train_distributed(
+                data = data,
+                y = y,
+                weights = weights,
+                data_val = data_val,
+                y_val = y_val,
+                weights_val = weights_val
+            )
+            new_state_dict = OrderedDict()
+            for k in state_dict.keys():
+               new_state_dict[k.replace('module.','')] = state_dict[k].clone().to('cuda')
+            
+        else:
+            ctx = mp.get_context('spawn')
+            result_queue = ctx.Queue()
+            event = ctx.Event()
+            ctx = mp.spawn(self._train_distributed, args=(result_queue,
+                                                          event,
+                                                          world_size,
+                                                          data, y,
+                                                          weights,
+                                                          data_val,
+                                                          y_val,
+                                                          weights_val),
+                           nprocs=world_size,
+                           join=False)
 
-        # load model to main process
-        # this is long though
-        while True:
-            if not result_queue.empty():
-                state_dict = result_queue.get()
-                new_state_dict = OrderedDict()
+            # load model to main process
+            # this is long though
+            while True:
+                if not result_queue.empty():
+                    state_dict = result_queue.get()
+                    new_state_dict = OrderedDict()
 
-                for k in state_dict.keys():
+                    for k in state_dict.keys():
 
-                    new_state_dict[k.replace('module.','')] = state_dict[k].clone().to('cuda')
+                        new_state_dict[k.replace('module.','')] = state_dict[k].clone().to('cuda')
 
-                # release CUDA objects
-                del state_dict
-                event.set()
-                break
+                    # release CUDA objects
+                    del state_dict
+                    event.set()
+                    break
 
-        # finish multiprocessing
-        ctx.join()
+            # finish multiprocessing
+            ctx.join()
         self.model.to('cuda').load_state_dict(new_state_dict)
         return self
 
-    def predict_partition(self, data: cp.ndarray, partition_info = None) -> cp.ndarray:
+    def predict_partition(self, data: cp.ndarray) -> cp.ndarray:
         """Inference phase.
 
         Args:
@@ -386,16 +411,15 @@ class TorchBasedLinearEstimator:
             Predicted target values.
 
         """
-        data_num, data_cat = self._prepare_data(data, partition_info['number'])
-        return cudf.DataFrame(self._score(data_num, data_cat, partition_info['number']), index = data.index)
+        data_num, data_cat = self._prepare_data(data)
+        return cudf.DataFrame(self._score(data_num, data_cat), index = data.index)
 
     def predict(self, data):
-
         res = data.map_partitions(
             self.predict_partition,
             meta=cudf.DataFrame(columns=np.arange(self.output_size)).astype(cp.float32)
         ).persist()
-        return res
+        return res.compute().values
 
 class TorchBasedLogisticRegression(TorchBasedLinearEstimator):
     """Linear binary classifier (distributed GPU version)."""
@@ -458,7 +482,7 @@ class TorchBasedLogisticRegression(TorchBasedLinearEstimator):
         super().__init__(data_size, categorical_idx, embed_sizes, output_size, cs, max_iter, tol, early_stopping, loss, metric)
         self.model = _model(self.data_size - len(self.categorical_idx), self.embed_sizes, self.output_size).cuda()
 
-    def predict(self, data: cp.ndarray) -> cp.ndarray:
+    def predict(self, data: cp.ndarray, dev_id = None) -> cp.ndarray:
         """Inference phase.
 
         Args:
@@ -541,7 +565,7 @@ class TorchBasedLinearRegression(TorchBasedLinearEstimator):
             self.output_size
         ).cuda()
 
-    def predict(self, data: cp.ndarray) -> cp.ndarray:
+    def predict(self, data: cp.ndarray, dev_id = None) -> cp.ndarray:
         """Inference phase.
 
         Args:

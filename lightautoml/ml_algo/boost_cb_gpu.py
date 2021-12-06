@@ -10,7 +10,6 @@ from typing import Union
 
 import torch
 
-from time import perf_counter
 
 import catboost as cb
 import numpy as np
@@ -137,11 +136,6 @@ class BoostCB_gpu(TabularMLAlgo_gpu, ImportanceEstimator):
             self._text_features = get_columns_by_role(dataset, 'Text')
 
         suggested_params = copy(self.default_params)
-
-        #gpus = np.arange(torch.cuda.device_count())
-        #gpu_ids = ''.join(str(e)+':' for e in gpus)
-        #suggested_params['devices'] = gpu_ids[:-1]
-        print('Catboost GPUS', suggested_params['devices'])
 
         if self.freeze_defaults:
             return suggested_params
@@ -307,7 +301,6 @@ class BoostCB_gpu(TabularMLAlgo_gpu, ImportanceEstimator):
             Tuple (model, predicted_values).
 
         """
-        st = perf_counter()
 
         params, num_trees, early_stopping_rounds, fobj, feval = self._infer_params()
 
@@ -323,7 +316,6 @@ class BoostCB_gpu(TabularMLAlgo_gpu, ImportanceEstimator):
         model.fit(cb_train, eval_set=cb_valid)
 
         val_pred = self._predict(model, cb_valid, params)
-        print(perf_counter() - st, "single fold time")
         return model, val_pred
 
     def predict_single_fold(self, model: cb.CatBoost, dataset: TabularDataset) -> np.ndarray:

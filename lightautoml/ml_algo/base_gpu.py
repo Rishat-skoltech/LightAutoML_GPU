@@ -114,8 +114,11 @@ class TabularMLAlgo_gpu(TabularMLAlgo):
                     preds.append(pred)
                 return models, preds
 
-            n_parts = torch.cuda.device_count()
-            
+            if self.task.device == "gpu":
+                n_parts = 1
+            else:
+                n_parts = torch.cuda.device_count()
+          
             print("Number of GPUs:", n_parts)
             n_folds = len(train_valid_iterator)
             inds = np.array_split(np.arange(n_folds), n_parts)

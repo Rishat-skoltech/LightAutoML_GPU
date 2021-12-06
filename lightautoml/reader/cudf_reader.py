@@ -42,9 +42,6 @@ from .guess_roles_gpu import get_null_scores_gpu
 from .utils import set_sklearn_folds
 from .base import PandasToPandasReader
 
-from time import perf_counter
-
-
 logger = logging.getLogger(__name__)
 
 # roles, how it's passed to automl
@@ -162,7 +159,6 @@ class CudfReader(PandasToPandasReader):
             Dataset with selected features.
 
         """
-        st = perf_counter()
         logger.info('Train data shape: {}'.format(train_data.shape))
         parsed_roles, kwargs = self._prepare_roles_and_kwargs(roles, train_data, roles_parsed = roles_parsed, **kwargs)
         train_data, kwargs = self._prepare_data_and_target(train_data, **kwargs)
@@ -240,7 +236,6 @@ class CudfReader(PandasToPandasReader):
             dataset = CudfDataset(train_data[self.used_features],
                                   self.roles, task=self.task, **kwargs)
 
-        print(perf_counter() - st, "cudf reader fit_read finished", dataset.shape)
 
         return dataset
 
