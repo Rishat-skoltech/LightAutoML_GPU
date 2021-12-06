@@ -84,11 +84,11 @@ class TabularAutoML_gpu(AutoMLPreset):
 
     # set initial runtime rate guess for first level models
     _time_scores = {
-        "lgb": 1,
-        "lgb_tuned": 3,
+        "lgb": 2,
+        "lgb_tuned": 6,
         "linear_l2": 0.7,
-        "cb": 2,
-        "cb_tuned": 6,
+        "cb": 1,
+        "cb_tuned": 3,
     }
 
     def __init__(

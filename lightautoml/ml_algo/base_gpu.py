@@ -106,23 +106,26 @@ class TabularMLAlgo_gpu(TabularMLAlgo):
                 preds = []
                 #cp.cuda.runtime.setDevice(dev_id)
                 #torch.cuda.set_device(f'cuda:{dev_id}')
-                for n in ind:
-                    (idx, train, valid) = train_valid[n]
-                    logger.info("===== Start working with \x1b[1mfold {}\x1b[0m for \x1b[1m{}\x1b[0m (par) =====".format(n,self._name))
-                    model, pred = fit_predict_single_fold(train, valid, dev_id)
-                    models.append(model)
-                    preds.append(pred)
-                return models, preds
+                #for n in ind:
+                (idx, train, valid) = train_valid[ind]
+                logger.info("===== Start working with \x1b[1mfold {}\x1b[0m for \x1b[1m{}\x1b[0m (par) =====".format(ind,self._name))
+                model, pred = fit_predict_single_fold(train, valid, dev_id)
+                #models.append(model)
+                #preds.append(pred)
+                return model, pred
 
             if self.task.device == "gpu":
                 n_parts = 1
             else:
                 n_parts = torch.cuda.device_count()
           
-            print("Number of GPUs:", n_parts)
+            #print("Number of GPUs:", n_parts)
             n_folds = len(train_valid_iterator)
-            inds = np.array_split(np.arange(n_folds), n_parts)
+            num_its = int(np.ceil(n_folds/n_parts))
+
+            inds = np.array_split(np.arange(n_folds), num_its)
             inds = [x for x in inds if len(x) > 0]
+
             device_ids = np.arange(n_parts)
             res = None
             models = []
@@ -130,17 +133,29 @@ class TabularMLAlgo_gpu(TabularMLAlgo):
 
             #with Parallel(n_jobs=n_parts, prefer='processes', 
             #              backend='loky', max_nbytes=None) as p:
-            with Parallel(n_jobs=n_parts, prefer='threads') as p: 
-                res = p(delayed(perform_iterations)
-                (self.fit_predict_single_fold,
-                train_valid_iterator, ind, device_id) 
-                for (ind, device_id) in zip(inds, device_ids))
 
+            for n in range(num_its):
+                self.timer.set_control_point()
+                with Parallel(n_jobs=n_parts, prefer='threads') as p: 
+                    res = p(delayed(perform_iterations)
+                    (self.fit_predict_single_fold,
+                    train_valid_iterator, ind, device_id) 
+                    for (ind, device_id) in zip(inds[n], device_ids))
 
-            for elem in res:
-                 models.extend(elem[0])
-                 preds.extend(elem[1])
-                 del elem
+                for elem in res:
+                     models.append(elem[0])
+                     preds.append(elem[1])
+                     del elem
+
+                self.timer.write_run_info()
+                if (n + 1) != num_its:
+                    if self.timer.time_limit_exceeded():
+                        logger.warning('Time limit exceeded after calculating fold {0}'\
+                        .format(n))
+                        break
+
+            logger.debug('Time history {0}. Time left {1}'\
+                .format(self.timer.get_run_results(), self.timer.time_left))
 
             self.models = models
             for n, (idx, _, _) in enumerate(train_valid_iterator):

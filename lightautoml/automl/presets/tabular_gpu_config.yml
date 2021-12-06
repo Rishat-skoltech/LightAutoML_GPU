@@ -31,7 +31,7 @@ reader_params:
   index_ok: True
   npartitions: 4
   # it will be used for feature generation
-  cv: 2
+  cv: 5
   # random state for folds creation
   random_state: 42
   # default roles params.
@@ -98,8 +98,7 @@ tuning_params:
   fit_on_holdout: True
   # max tuning iter for lightgbm. Auto - depends on dataset
   # smaller dataset gets more iters (int or 'auto')
-  #max_tuning_iter: 101
-  max_tuning_iter: 0
+  max_tuning_iter: 101
   # max tuning time. Tuning time might be set lower during train by automl's timer, but cannot be higher
   max_tuning_time: 300
 
