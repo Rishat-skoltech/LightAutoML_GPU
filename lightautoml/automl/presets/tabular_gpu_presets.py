@@ -451,7 +451,7 @@ class TabularAutoML_gpu(AutoMLPreset):
                 if folds:
                     
                     gbm_tuner = OptunaTuner_gpu(ngpus = gpu_cnt,
-                        gpu_queue = GpuQueue(),
+                        gpu_queue = GpuQueue(ngpus = gpu_cnt),
                         n_trials=self.tuning_params["max_tuning_iter"],
                         timeout=self.tuning_params["max_tuning_time"],
                         fit_on_holdout=self.tuning_params["fit_on_holdout"],

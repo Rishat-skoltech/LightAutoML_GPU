@@ -33,9 +33,10 @@ optuna.logging.set_verbosity(optuna.logging.DEBUG)
 
 class GpuQueue:
 
-    def __init__(self):
+    def __init__(self, ngpus):
+        self.ngpus = ngpus
         self.queue = multiprocessing.Manager().Queue()
-        all_idxs = list(range(N_GPUS)) if N_GPUS > 0 else [None]
+        all_idxs = list(range(self.ngpus)) if self.ngpus > 0 else [None]
         for idx in all_idxs:
             self.queue.put(idx)
 
@@ -59,13 +60,13 @@ class OptunaTuner_gpu(OptunaTuner):
         # TODO: For now, metric is designed to be greater is better. Change maximize param after metric refactor if needed
         self,
         ngpus: int = 1,
-        gpu_queue: GpuQueue
+        gpu_queue: GpuQueue = None,
         *args,
         **kwargs
     ):
         super().__init__(*args, **kwargs)
         self.ngpus = ngpus
-        self.qpu_queue = gpu_queue
+        self.gpu_queue = gpu_queue
 
     def fit(
         self,
