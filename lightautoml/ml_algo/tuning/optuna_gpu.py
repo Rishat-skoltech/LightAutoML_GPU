@@ -176,10 +176,10 @@ class OptunaTuner_gpu(OptunaTuner):
             Callable objective.
 
         """
-        with self.gpu_queue.one_gpu_per_process() as gpu_id:
-            assert isinstance(ml_algo, MLAlgo)
+        assert isinstance(ml_algo, MLAlgo)
 
-            def objective(trial: optuna.trial.Trial) -> float:
+        def objective(trial: optuna.trial.Trial) -> float:
+            with self.gpu_queue.one_gpu_per_process() as gpu_id:
                 _ml_algo = deepcopy(ml_algo)
                 _ml_algo.parallel_folds = False
                 _ml_algo.gpu_ids = [gpu_id]
@@ -206,9 +206,9 @@ class OptunaTuner_gpu(OptunaTuner):
                         optimization_search_space=optimization_search_space,
                         suggested_params=_ml_algo.init_params_on_input(train_valid_iterator),
                     )
-
                 output_dataset = _ml_algo.fit_predict(train_valid_iterator=train_valid_iterator)
+
                 return _ml_algo.score(output_dataset)
 
-            return objective
+        return objective
 
