@@ -44,11 +44,12 @@ logger = logging.getLogger(__name__)
 TabularDatasetGpu = Union[CupyDataset, CudfDataset, DaskCudfDataset]
 
 class TabularMLAlgo_gpu(TabularMLAlgo):
-    """Machine learning algorithms that accepts cupy arrays as input."""
+    """Machine learning algorithms that accepts gpu data as input."""
     _name: str = 'TabularAlgo_gpu'
 
-    def __init__(self, parallel_folds: bool = False, *args: Any, **kwargs: Any):
+    def __init__(self, parallel_folds: bool=False, gpu_ids:[int]=None, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
+        self.gpu_ids = gpu_ids
         self.parallel_folds = parallel_folds
 
     def fit_predict(self, train_valid_iterator: TrainValidIterator) -> CupyDataset:
@@ -68,6 +69,7 @@ class TabularMLAlgo_gpu(TabularMLAlgo):
         """
 
         logger.info('Start fitting {} ...'.format(self._name))
+        print(self.gpu_ids, " ", self.parallel_folds)
         self.timer.start()
         assert self.is_fitted is False, 'Algo is already fitted'
         # init params on input if no params was set before
@@ -104,9 +106,6 @@ class TabularMLAlgo_gpu(TabularMLAlgo):
             def perform_iterations(fit_predict_single_fold, train_valid, ind, dev_id):
                 models = []
                 preds = []
-                #cp.cuda.runtime.setDevice(dev_id)
-                #torch.cuda.set_device(f'cuda:{dev_id}')
-                #for n in ind:
                 (idx, train, valid) = train_valid[ind]
                 logger.info("===== Start working with \x1b[1mfold {}\x1b[0m for \x1b[1m{}\x1b[0m (par) =====".format(ind,self._name))
                 model, pred = fit_predict_single_fold(train, valid, dev_id)
@@ -126,7 +125,6 @@ class TabularMLAlgo_gpu(TabularMLAlgo):
             inds = np.array_split(np.arange(n_folds), num_its)
             inds = [x for x in inds if len(x) > 0]
 
-            device_ids = np.arange(n_parts)
             res = None
             models = []
             preds = []
@@ -140,7 +138,7 @@ class TabularMLAlgo_gpu(TabularMLAlgo):
                     res = p(delayed(perform_iterations)
                     (self.fit_predict_single_fold,
                     train_valid_iterator, ind, device_id) 
-                    for (ind, device_id) in zip(inds[n], device_ids))
+                    for (ind, device_id) in zip(inds[n], self.gpu_ids))
 
                 for elem in res:
                      models.append(elem[0])

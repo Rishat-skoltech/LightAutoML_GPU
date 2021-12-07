@@ -118,7 +118,7 @@ cb_params:
     task_type: 'GPU'
     thread_count: 100
   freeze_defaults: False
-  #parallel_folds: True
+  parallel_folds: True
 
 # params for LinearLBFGS_gpu MLAlgo
 # no tuner needed for this algo - regularization params are found during fit

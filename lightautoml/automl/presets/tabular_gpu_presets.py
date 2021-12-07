@@ -31,6 +31,8 @@ from ...ml_algo.boost_xgb_gpu import BoostXGB_dask
 from ...ml_algo.linear_gpu import LinearLBFGS_gpu
 from ...ml_algo.linear_gpu import LinearL1CD_gpu
 from ...ml_algo.tuning.optuna import OptunaTuner
+from ...ml_algo.tuning.optuna_gpu import OptunaTuner_gpu
+from ...ml_algo.tuning.optuna_gpu import GpuQueue
 from ...pipelines.features.lgb_pipeline_gpu import LGBAdvancedPipeline_gpu
 from ...pipelines.features.lgb_pipeline_gpu import LGBSimpleFeatures_gpu
 from ...pipelines.features.linear_pipeline_gpu import LinearFeatures_gpu
@@ -232,16 +234,44 @@ class TabularAutoML_gpu(AutoMLPreset):
             gpu_cnt = 1
         else:
             gpu_cnt = torch.cuda.device_count()
+
         gpu_ids = self.gpu_ids
+        if gpu_cnt > 0 and gpu_ids:
+            if gpu_ids == "all":
+                cur_gpu_ids = ",".join(list(map(str, range(gpu_cnt))))
+            else:
+                cur_gpu_ids = copy(gpu_ids)
+            self.cb_params["default_params"]["task_type"] = "GPU"
+            self.cb_params["default_params"]["devices"] = cur_gpu_ids.replace(",", ":")
+            self.cb_params["gpu_ids"] = cur_gpu_ids.split(",")
+            
+        if self.task.device == 'gpu' or self.lgb_params["parallel_folds"]:
+            gpu_cnt = 1
+        else:
+            gpu_cnt = torch.cuda.device_count()
 
         if gpu_cnt > 0 and gpu_ids:
-            #if gpu_ids == "all":
-            #    gpu_ids = ",".join(list(map(str, range(gpu_cnt))))
-            gpu_ids = ",".join(list(map(str, range(gpu_cnt))))
+            if gpu_ids == "all":
+                cur_gpu_ids = ",".join(list(map(str, range(gpu_cnt))))
+            else:
+                cur_gpu_ids = copy(gpu_ids)
+        
+            self.lgb_params["gpu_ids"] = cur_gpu_ids.split(",")
 
-            self.cb_params["default_params"]["task_type"] = "GPU"
-            self.cb_params["default_params"]["devices"] = gpu_ids.replace(",", ":")
-        # check all n_jobs params
+        if self.task.device == 'gpu' or self.linear_l2_params["parallel_folds"]:
+            gpu_cnt = 1
+        else:
+            gpu_cnt = torch.cuda.device_count()
+
+        if gpu_cnt > 0 and gpu_ids:
+            if gpu_ids == "all":
+                cur_gpu_ids = ",".join(list(map(str, range(gpu_cnt))))
+            else:
+                cur_gpu_ids = copy(gpu_ids)
+        
+            self.linear_l2_params["gpu_ids"] = cur_gpu_ids.split(",")
+
+       # check all n_jobs params
         cpu_cnt = min(os.cpu_count(), self.cpu_limit)
         torch.set_num_threads(cpu_cnt)
 
@@ -391,6 +421,11 @@ class TabularAutoML_gpu(AutoMLPreset):
             gbm_timer = self.timer.get_task_timer(algo_key, time_score)
             if algo_key == "lgb":
                 gbm_model = BoostXGB(timer=gbm_timer, **self.lgb_params)
+                #if self.task.device == "mgpu" and not self.lgb_params["parallel_folds"]:
+                #    gbm_model = BoostXGB_dask(client = , timer=gbm_timer, **self.lgb_params)
+                #else:
+                #    gbm_model = BoostXGB(timer=gbm_timer, **self.lgb_params)
+                
             elif algo_key == "cb":
                 gbm_model = BoostCB_gpu(timer=gbm_timer, **self.cb_params)
             else:
@@ -398,11 +433,36 @@ class TabularAutoML_gpu(AutoMLPreset):
 
             if tuned:
                 gbm_model.set_prefix("Tuned")
-                gbm_tuner = OptunaTuner(
-                    n_trials=self.tuning_params["max_tuning_iter"],
-                    timeout=self.tuning_params["max_tuning_time"],
-                    fit_on_holdout=self.tuning_params["fit_on_holdout"],
-                )
+                if algo_key == "cb":
+                    folds = self.cb_params["parallel_folds"]
+                    if self.task.device == 'gpu':
+                        gpu_cnt = 1
+                    else:
+                        gpu_cnt = torch.cuda.device_count()
+                elif algo_key == "lgb":
+                    folds = self.lgb_params["parallel_folds"]
+                    if self.task.device == 'gpu':
+                        gpu_cnt = 1
+                    else:
+                        gpu_cnt = torch.cuda.device_count()
+                else:
+                    raise ValueError("Wrong algo key")
+               
+                if folds:
+                    
+                    gbm_tuner = OptunaTuner_gpu(ngpus = gpu_cnt,
+                        gpu_queue = GpuQueue(),
+                        n_trials=self.tuning_params["max_tuning_iter"],
+                        timeout=self.tuning_params["max_tuning_time"],
+                        fit_on_holdout=self.tuning_params["fit_on_holdout"],
+                    )
+                else:
+                    gbm_tuner = OptunaTuner(
+                        n_trials=self.tuning_params["max_tuning_iter"],
+                        timeout=self.tuning_params["max_tuning_time"],
+                        fit_on_holdout=self.tuning_params["fit_on_holdout"],
+                    )
+
                 gbm_model = (gbm_model, gbm_tuner)
             ml_algos.append(gbm_model)
             force_calc.append(force)

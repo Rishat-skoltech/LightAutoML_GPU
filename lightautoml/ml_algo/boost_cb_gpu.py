@@ -290,7 +290,7 @@ class BoostCB_gpu(TabularMLAlgo_gpu, ImportanceEstimator):
 
         return pool
 
-    def fit_predict_single_fold(self, train: TabularDataset, valid: TabularDataset, dev_id: int = 0) -> Tuple[cb.CatBoost, np.ndarray]:
+    def fit_predict_single_fold(self, train: TabularDataset, valid: TabularDataset, dev_id: int = None) -> Tuple[cb.CatBoost, np.ndarray]:
         """Implements training and prediction on single fold.
 
         Args:
@@ -307,11 +307,18 @@ class BoostCB_gpu(TabularMLAlgo_gpu, ImportanceEstimator):
         cb_train = self._get_pool(train)
         cb_valid = self._get_pool(valid)
 
-        model = cb.CatBoost({**params, **{'devices':str(dev_id),
-                                          'num_trees': num_trees,
-                                          'objective': fobj,
-                                          'eval_metric': feval,
-                                          "od_wait": early_stopping_rounds}})
+        if dev_id is None and len(self.gpu_ids) > 1:
+            model = cb.CatBoost({**params, **{'num_trees': num_trees,
+                                              'objective': fobj,
+                                              'eval_metric': feval,
+                                              "od_wait": early_stopping_rounds}})
+        else:
+            cur_gpu = str(self.gpu_ids[0]) if dev_id is None else str(dev_id)
+            model = cb.CatBoost({**params, **{'devices':cur_gpu,
+                                              'num_trees': num_trees,
+                                              'objective': fobj,
+                                              'eval_metric': feval,
+                                              "od_wait": early_stopping_rounds}})
 
         model.fit(cb_train, eval_set=cb_valid)
 
