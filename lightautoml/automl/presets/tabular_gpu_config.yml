@@ -125,6 +125,7 @@ cb_params:
 linear_l2_params:
   default_params: { }
   freeze_defaults: False
+  parallel_folds: False
 
 gbm_pipeline_params:
   # max number of categories to generate intersections

@@ -113,7 +113,7 @@ class LinearLBFGS_gpu(TabularMLAlgo_gpu):
                 if self.parallel_folds:
                     model = TorchBasedLogisticRegression(output_size=self.n_classes, **params)
                 else:
-                    model = TLR_dask(output_size=self.n_classes, **params)
+                    model = TLR_dask(output_size=self.n_classes, gpu_ids = self.gpu_ids, **params)
             else:
                 raise ValueError('Device not supported')
         elif self.task.name == 'reg':
@@ -123,7 +123,7 @@ class LinearLBFGS_gpu(TabularMLAlgo_gpu):
                 if self.parallel_folds:
                     model = TorchBasedLinearRegression(output_size=1, **params)
                 else:
-                    model = TLinR_dask(output_size=1, **params)
+                    model = TLinR_dask(output_size=1, gpu_ids = self.gpu_ids, **params)
             else:
                 raise ValueError('Device not supported')
         else:

@@ -113,6 +113,7 @@ class TabularAutoML_gpu(AutoMLPreset):
         linear_l2_params: Optional[dict] = None,
         gbm_pipeline_params: Optional[dict] = None,
         linear_pipeline_params: Optional[dict] = None,
+        client = None,
     ):
 
         """
@@ -151,6 +152,7 @@ class TabularAutoML_gpu(AutoMLPreset):
 
         """
         super().__init__(task, timeout, memory_limit, cpu_limit, gpu_ids, timing_params, config_path)
+        self.client = client
 
         # upd manual params
         for name, param in zip(
@@ -420,11 +422,11 @@ class TabularAutoML_gpu(AutoMLPreset):
             time_score = self.get_time_score(n_level, key)
             gbm_timer = self.timer.get_task_timer(algo_key, time_score)
             if algo_key == "lgb":
-                gbm_model = BoostXGB(timer=gbm_timer, **self.lgb_params)
-                #if self.task.device == "mgpu" and not self.lgb_params["parallel_folds"]:
-                #    gbm_model = BoostXGB_dask(client = , timer=gbm_timer, **self.lgb_params)
-                #else:
-                #    gbm_model = BoostXGB(timer=gbm_timer, **self.lgb_params)
+                #gbm_model = BoostXGB(timer=gbm_timer, **self.lgb_params)
+                if self.task.device == "mgpu" and not self.lgb_params["parallel_folds"]:
+                    gbm_model = BoostXGB_dask(client=self.client, timer=gbm_timer, **self.lgb_params)
+                else:
+                    gbm_model = BoostXGB(timer=gbm_timer, **self.lgb_params)
                 
             elif algo_key == "cb":
                 gbm_model = BoostCB_gpu(timer=gbm_timer, **self.cb_params)

@@ -3,7 +3,6 @@
 import logging
 
 from copy import deepcopy
-from copy import deepcopy
 from typing import Callable
 from typing import Optional
 from typing import Sequence
@@ -17,6 +16,8 @@ import dask.dataframe as dd
 import dask_cudf
 import cudf
 
+from joblib import Parallel, delayed
+
 import os
 
 from cupyx.scipy import sparse as sparse_gpu
@@ -24,9 +25,6 @@ import torch
 import torch.distributed as dist
 from torch import nn
 from torch import optim
-import torch.multiprocessing as mp
-
-from torch.nn.parallel import DistributedDataParallel as DDP
 
 from ...tasks.losses import TorchLossWrapper
 
@@ -41,74 +39,8 @@ class TorchBasedLinearEstimator:
 
     Accepts Numeric + Label Encoded categories or Numeric sparse input.
     """
-    def _train_distributed(
-        self,
-        rank: int = 0,
-        res_queue = None,
-        event = None,
-        world_size = 1,
-        data = None,
-        y = None,
-        weights = None,
-        data_val = None,
-        y_val = None,
-        weights_val = None
-    ):
 
-        self._setup(rank, world_size)
-        data, data_cat = self._prepare_data_mgpu(data, rank)
-        data_val, data_val_cat = self._prepare_data_mgpu(data_val, rank)
-
-        if type(y) != cp.ndarray:
-            y = y.compute().values
-        if type(y_val) !=cp.ndarray:
-            y_val = y_val.compute().values
-        y = torch.as_tensor(y.astype(cp.float32), device=f'cuda:{rank}')
-        if weights is not None:
-            if type(weights) != cp.ndarray:
-                weights = weights.compute().values
-            weights = torch.as_tensor(weights.astype(cp.float32), device=f'cuda:{rank}')
-        best_score = -np.inf
-        best_model = self.model
-        es = 0
-        model = self.model.to(rank)
-        dist_model = DDP(model, device_ids=[rank])
-
-        for c in self.cs:
-            self._optimize(dist_model, data, data_cat, y, weights, c)
-            val_pred = self._score_distributed(dist_model, data_val, data_val_cat)
-            score = self.metric(y_val, val_pred, weights_val)
-            if score > best_score:
-                best_score = score
-                if rank == 0:
-                    best_model_params = deepcopy(dist_model.state_dict())
-                es = 0
-            else:
-                es += 1
-            if es >= self.early_stopping:
-                break
-        if world_size==1:
-            self._cleanup()
-            return best_model_params
-        else:
-            if rank == 0:
-                res_queue.put(best_model_params)
-                event.wait()
-                if res_queue.empty():
-                    self._cleanup()
-            else:
-                self._cleanup()
-
-    @staticmethod
-    def _score_distributed(dist_model, data_val, data_val_cat):
-        with torch.set_grad_enabled(False):
-            dist_model.eval()
-            preds = cp.asarray(dist_model(data_val, data_val_cat))
-            if preds.ndim > 1 and preds.shape[1] == 1:
-                preds = cp.squeeze(preds)
-        return preds
-
-    def _score(self, data: cp.ndarray, data_cat: Optional[cp.ndarray]) -> cp.ndarray:
+    def _score(self, model, data: cp.ndarray, data_cat: Optional[cp.ndarray]) -> cp.ndarray:
         """Get predicts to evaluate performance of model.
 
         Args:
@@ -120,51 +52,75 @@ class TorchBasedLinearEstimator:
 
         """
         with torch.set_grad_enabled(False):
-            model = self.model.to(f'cuda')
             model.eval()
-            preds = cp.asarray(model(data, data_cat))
+            preds = model(data, data_cat)
+            preds = cp.asarray(preds)
             if preds.ndim > 1 and preds.shape[1] == 1:
                 preds = cp.squeeze(preds)
 
         return preds
 
-    def _prepare_data_mgpu(self, data, rank):
+    def _prepare_data_dense(self, data, y, weights, rank):
+
+        if rank is None:
+            ind = 0
+            size = 1
+            device_id = f'cuda:0'
+        else:
+            ind = rank
+            size = torch.cuda.device_count()
+            device_id = f'cuda:{rank}'
 
         if type(data) == cp.ndarray:
-            data_part = data
+            data = cp.copy(data)
         else:
-            data_part = data.compute()
+            data = data.compute()
+            
+        size_base = data.shape[0]//size
+        residue = int(data.shape[0]%size)
+        offset = size_base*ind + min(ind, residue)
 
-        device_id = f'cuda:{rank}'
+        if type(data) == cp.ndarray:
+            data = data[offset:offset+size_base + int(residue>ind), :]
+        else:
+            data = data.iloc[offset:offset+size_base + int(residue>ind)]
+
+
+        if y is not None:
+            if type(y) != cp.ndarray:
+                y = cp.copy(y.compute().values[offset:offset+size_base + int(residue>ind)])
+            else:
+                y = cp.copy(y[offset:offset+size_base + int(residue>ind)])
+            y = torch.as_tensor(y.astype(cp.float32), device=device_id)
+        if weights is not None:
+
+            if type(weights) != cp.ndarray:
+                weigths = cp.copy(weights.compute().values[offset:offset+size_base+int(residue>ind)])
+            else:
+                weights = cp.copy(weights[offset:offset+size_base + int(residue>ind)])
+
+            weights = torch.as_tensor(weights.astype(cp.float32), device=device_id)
+
         if 0 < len(self.categorical_idx) < data.shape[1]:
             # noinspection PyTypeChecker
             data_cat = torch.as_tensor(
-                data_part[self.categorical_idx].values.astype(cp.int32), 
+                data[self.categorical_idx].values.astype(cp.int32), 
                 device=device_id
             )
             data_ = torch.as_tensor(
-                data_part[data_part.columns.difference(self.categorical_idx)]\
+                data[data.columns.difference(self.categorical_idx)]\
                  .values.astype(cp.float32),
                 device=device_id
             )
-            return data_, data_cat
+            return data_, data_cat, y, weights
 
         elif len(self.categorical_idx) == 0:
-            data_ = torch.as_tensor(data_part.values.astype(cp.float32), device=device_id)
-            return data_, None
+            data_ = torch.as_tensor(data.values.astype(cp.float32), device=device_id)
+            return data_, None, y, weights
 
         else:
-            data_cat = torch.as_tensor(data_part.values.astype(cp.int32), device=device_id)
+            data_cat = torch.as_tensor(data.values.astype(cp.int32), device=device_id)
             return None, data_cat
-
-    def _setup(self, rank, world_size):
-        os.environ['MASTER_ADDR'] = 'localhost'
-        os.environ['MASTER_PORT'] = '12355'
-        # initialize the process group
-        dist.init_process_group("gloo", rank=rank, world_size=world_size)
-
-    def _cleanup(self):
-        dist.destroy_process_group()
 
     def __init__(
         self,
@@ -194,7 +150,8 @@ class TorchBasedLinearEstimator:
         tol: float = 1e-5,
         early_stopping: int = 2,
         loss=Optional[Callable],
-        metric=Optional[Callable]
+        metric=Optional[Callable],
+        gpu_ids=None
     ):
         """
         Args:
@@ -224,8 +181,9 @@ class TorchBasedLinearEstimator:
         self.early_stopping = early_stopping
         self.loss = loss  # loss(preds, true) -> loss_arr, assume reduction='none'
         self.metric = metric  # metric(y_true, y_preds, sample_weight = None) -> float (greater_is_better)
+        self.gpu_ids = gpu_ids
 
-    def _prepare_data(self, data: ArrayOrSparseMatrix):
+    def _prepare_data(self, data: ArrayOrSparseMatrix, y = None, weights = None, rank: int = None):
         """Prepare data based on input type.
 
         Args:
@@ -238,43 +196,9 @@ class TorchBasedLinearEstimator:
         if sparse_gpu.issparse(data):
             raise NotImplementedError("sparse data on multi GPU is not yet supported")
 
-        return self._prepare_data_dense(data)
+        return self._prepare_data_dense(data, y, weights,  rank)
 
-
-    def _prepare_data_dense(self, data: cp.ndarray):
-        """Prepare dense matrix.
-
-        Split categorical and numeric features.
-
-        Args:
-            data: data to prepare.
-
-        Returns:
-            Tuple (numeric_features, cat_features).
-
-        """
-        if 0 < len(self.categorical_idx) < data.shape[1]:
-            # noinspection PyTypeChecker
-            data_cat = torch.as_tensor(
-                data[self.categorical_idx].values.astype(cp.int32),
-                device=f'cuda'
-            )
-            data = torch.as_tensor(
-                data[data.columns.difference(self.categorical_idx)]\
-                    .values.astype(cp.float32),
-                device=f'cuda'
-            )
-            return data, data_cat
-
-        elif len(self.categorical_idx) == 0:
-            data = torch.as_tensor(data.values.astype(cp.float32), device=f'cuda')
-            return data, None
-
-        else:
-            data_cat = torch.as_tensor(data.values.astype(cp.int32), device=f'cuda')
-            return None, data_cat
-
-    def _optimize(self, dist_model, data: torch.Tensor,
+    def _optimize(self, model, data: torch.Tensor,
                   data_cat: Optional[torch.Tensor], y: torch.Tensor = None,
                   weights: Optional[torch.Tensor] = None, c: float = 1):
         """Optimize single model.
@@ -287,9 +211,9 @@ class TorchBasedLinearEstimator:
             c: Regularization coefficient.
 
         """
-        dist_model.train()
+        model.train()
         opt = optim.LBFGS(
-            dist_model.parameters(),
+            model.parameters(),
             lr=0.1,
             max_iter=self.max_iter,
             tolerance_change=self.tol,
@@ -300,8 +224,8 @@ class TorchBasedLinearEstimator:
         results = []
         def closure():
             opt.zero_grad()
-            output = dist_model(data, data_cat)
-            loss = self._loss_fn(dist_model, y.reshape(-1, 1), output, weights, c)
+            output = model(data, data_cat)
+            loss = self._loss_fn(model, y.reshape(-1, 1), output, weights, c)
             if loss.requires_grad:
                 loss.backward()
             results.append(loss.item())
@@ -347,79 +271,74 @@ class TorchBasedLinearEstimator:
                     data_val: Optional[dask_cudf.DataFrame] = None,
                     y_val: Optional[dask_cudf.DataFrame] = None,
                     weights_val: Optional[cp.ndarray] = None,
-                    dev_id: int = None):
+                    dev_id = None):
 
         assert self.model is not None, 'Model should be defined'
 
-        world_size = torch.cuda.device_count()
-        if world_size==1:
-            state_dict = self._train_distributed(
-                data = data,
-                y = y,
-                weights = weights,
-                data_val = data_val,
-                y_val = y_val,
-                weights_val = weights_val
-            )
+        def train_iteration(data, y, weights, rank, c):
+            model = deepcopy(self.model)#.to(rank)
+            model.to(rank)
+            data, data_cat, y, weights = self._prepare_data(data, y, weights, rank)
+            self._optimize(model, data, data_cat, y, weights, c)
+            return model.state_dict()
+
+        def score_iteration(data_val, y_val, weights_val, rank):
+            model = deepcopy(self.model)#.to(rank)
+            model.to(rank)
+            data_val, data_val_cat, y_val, weights_val = self._prepare_data(data_val, y_val, weights_val, rank)
+            val_pred = self._score(model, data_val, data_val_cat)
+            score = self.metric(y_val, val_pred, weights_val)
+            return score
+
+        es = 0
+        best_score = -np.inf
+
+        for c in self.cs:
+            with Parallel(n_jobs=len(self.gpu_ids), prefer='threads') as p:
+                res = p(delayed(train_iteration)
+                (data, y, weights, int(device_id), c)
+                for device_id in self.gpu_ids)
             new_state_dict = OrderedDict()
-            for k in state_dict.keys():
-               new_state_dict[k.replace('module.','')] = state_dict[k].clone().to('cuda')
-            
-        else:
-            ctx = mp.get_context('spawn')
-            result_queue = ctx.Queue()
-            event = ctx.Event()
-            ctx = mp.spawn(self._train_distributed, args=(result_queue,
-                                                          event,
-                                                          world_size,
-                                                          data, y,
-                                                          weights,
-                                                          data_val,
-                                                          y_val,
-                                                          weights_val),
-                           nprocs=world_size,
-                           join=False)
+            for i, it in enumerate(res):
+                if i == 0:
+                    for k in it.keys():
+                        new_state_dict[k.replace('module.', '')] = it[k].clone().to('cuda:0')
+                else:
+                    for k in it.keys():
+                        new_state_dict[k.replace('module.', '')] += it[k].clone().to('cuda:0')
+            for k in new_state_dict.keys():
+                new_state_dict[k] = torch.div(new_state_dict[k], float(len(res)))
 
-            # load model to main process
-            # this is long though
-            while True:
-                if not result_queue.empty():
-                    state_dict = result_queue.get()
-                    new_state_dict = OrderedDict()
+            self.model.to('cuda').load_state_dict(new_state_dict)
 
-                    for k in state_dict.keys():
+            with Parallel(n_jobs=len(self.gpu_ids), prefer='threads') as p:
+                res = p(delayed(score_iteration)
+                (data_val, y_val, weights_val, int(device_id))
+                for device_id in self.gpu_ids)
 
-                        new_state_dict[k.replace('module.','')] = state_dict[k].clone().to('cuda')
+            score = 0.0
+            for it in res:
+                score += it
+            score /= len(self.gpu_ids)
 
-                    # release CUDA objects
-                    del state_dict
-                    event.set()
-                    break
+            if score > best_score:
+                best_score = score
+                best_model_params = deepcopy(new_state_dict)
+                es = 0
+            else:
+                es += 1
+            if es >= self.early_stopping:
+                break
 
-            # finish multiprocessing
-            ctx.join()
-        self.model.to('cuda').load_state_dict(new_state_dict)
+        self.model.to('cuda').load_state_dict(best_model_params)
+
         return self
 
-    def predict_partition(self, data: cp.ndarray) -> cp.ndarray:
-        """Inference phase.
-
-        Args:
-            data: Data to test.
-
-        Returns:
-            Predicted target values.
-
-        """
-        data_num, data_cat = self._prepare_data(data)
-        return cudf.DataFrame(self._score(data_num, data_cat), index = data.index)
-
     def predict(self, data):
-        res = data.map_partitions(
-            self.predict_partition,
-            meta=cudf.DataFrame(columns=np.arange(self.output_size)).astype(cp.float32)
-        ).persist()
-        return res.compute().values
+        data_num, data_cat, _, _ = self._prepare_data(data)
+        res = self._score(self.model, data_num, data_cat)
+        return res
+
 
 class TorchBasedLogisticRegression(TorchBasedLinearEstimator):
     """Linear binary classifier (distributed GPU version)."""
@@ -452,7 +371,8 @@ class TorchBasedLogisticRegression(TorchBasedLinearEstimator):
         tol: float = 1e-4,
         early_stopping: int = 2,
         loss=Optional[Callable],
-        metric=Optional[Callable]
+        metric=Optional[Callable],
+        gpu_ids = None
     ):
         """
         Args:
@@ -479,7 +399,7 @@ class TorchBasedLogisticRegression(TorchBasedLinearEstimator):
 
         if loss is None:
             loss = TorchLossWrapper(_loss)
-        super().__init__(data_size, categorical_idx, embed_sizes, output_size, cs, max_iter, tol, early_stopping, loss, metric)
+        super().__init__(data_size, categorical_idx, embed_sizes, output_size, cs, max_iter, tol, early_stopping, loss, metric, gpu_ids)
         self.model = _model(self.data_size - len(self.categorical_idx), self.embed_sizes, self.output_size).cuda()
 
     def predict(self, data: cp.ndarray, dev_id = None) -> cp.ndarray:
@@ -493,8 +413,8 @@ class TorchBasedLogisticRegression(TorchBasedLinearEstimator):
 
         """
         pred = super().predict(data)
-        if self._binary:
-            pred = pred[:, 0]
+        #if self._binary:
+        #    pred = pred[:, 0]
         return pred
 
 
@@ -529,7 +449,8 @@ class TorchBasedLinearRegression(TorchBasedLinearEstimator):
         tol: float = 1e-4,
         early_stopping: int = 2,
         loss=Optional[Callable],
-        metric=Optional[Callable]
+        metric=Optional[Callable],
+        gpu_ids = None
     ):
         """
         Args:
@@ -557,7 +478,8 @@ class TorchBasedLinearRegression(TorchBasedLinearEstimator):
             tol,
             early_stopping,
             loss, 
-            metric
+            metric,
+            gpu_ids
         )
         self.model = CatRegression(
             self.data_size - len(self.categorical_idx),

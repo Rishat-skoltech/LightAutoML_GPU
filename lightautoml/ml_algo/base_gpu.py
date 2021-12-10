@@ -69,7 +69,6 @@ class TabularMLAlgo_gpu(TabularMLAlgo):
         """
 
         logger.info('Start fitting {} ...'.format(self._name))
-        print(self.gpu_ids, " ", self.parallel_folds)
         self.timer.start()
         assert self.is_fitted is False, 'Algo is already fitted'
         # init params on input if no params was set before
@@ -118,7 +117,6 @@ class TabularMLAlgo_gpu(TabularMLAlgo):
             else:
                 n_parts = torch.cuda.device_count()
           
-            #print("Number of GPUs:", n_parts)
             n_folds = len(train_valid_iterator)
             num_its = int(np.ceil(n_folds/n_parts))
 

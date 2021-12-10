@@ -5,6 +5,10 @@ from lightautoml.dataset.roles import TargetRole
 import pandas as pd
 import numpy as np
 
+from dask.distributed import Client
+from dask_cuda import LocalCUDACluster
+import cudf
+
 from os import listdir
 
 files = listdir('.')
@@ -38,6 +42,14 @@ task_types = {'covertype.csv' : 'multiclass' , 'albert.csv' : 'binary',
              }
 
 if __name__ == "__main__":
+
+    cluster = LocalCUDACluster(rmm_managed_memory=True, CUDA_VISIBLE_DEVICES="0,1",
+                               protocol="ucx", enable_nvlink=True,
+                               memory_limit="8GB")
+
+    client = Client(cluster)
+    client.run(cudf.set_allocator, "managed")
+
     print(csv_files)
     #cur_file = csv_files[1]
     cur_file = "jobs_train.csv"
@@ -48,7 +60,7 @@ if __name__ == "__main__":
             data[col] = data[col].replace('?', np.nan).astype(np.float32)
     # run automl
     # this is for small amounts of data
-    automl = TabularAutoML_gpu(task=Task('binary', device="mgpu"))
+    automl = TabularAutoML_gpu(task=Task('binary', device="mgpu"))#, client = client)
     #automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="gpu"))
     # this is for bigger amounts of data
     #automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="mgpu"))
@@ -59,5 +71,5 @@ if __name__ == "__main__":
 
     #te_pred = automl.predict(data)
 
-    print(type(oof_predictions))
+    #print(type(oof_predictions))
     #print(type(te_pred))
