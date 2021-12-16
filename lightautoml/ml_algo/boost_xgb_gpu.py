@@ -15,6 +15,7 @@ from xgboost import dask as dxgb
 
 import numpy as np
 import pandas as pd
+import cupy as cp
 
 from pandas import Series
 
@@ -240,20 +241,32 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
         valid_weights = valid.weights
         train_data = train.data
         valid_data = valid.data
-        if type(train) == DaskCudfDataset:
-            train_target = train_target.compute()
-            if train_weights is not None:
-                train_weights = train_weights.compute()
-            valid_target = valid_target.compute()
-            if valid_weights is not None:
-                valid_weights = valid_weights.compute()
-            train_data = train_data.compute()
-            valid_data = valid_data.compute()
+        with cp.cuda.Device(dev_id):
+            if type(train) == DaskCudfDataset:
+                train_target = train_target.compute()
+                if train_weights is not None:
+                    train_weights = train_weights.compute()
+                valid_target = valid_target.compute()
+                if valid_weights is not None:
+                    valid_weights = valid_weights.compute()
+                train_data = train_data.compute()
+                valid_data = valid_data.compute()
+            else:
+                train_target = cp.copy(train_target)
+                if train_weights is not None:
+                    train_weights = cp.copy(train_weights)
+                valid_target = cp.copy(valid_target)
+                if valid_weights is not None:
+                    valid_weights = cp.copy(valid_weights)
+                train_data = cp.copy(train_data)
+                valid_data = cp.copy(valid_data)
+
         params, num_trees, early_stopping_rounds, verbose_eval, fobj, feval = self._infer_params()
         train_target, train_weight = self.task.losses['xgb_gpu'].fw_func(train_target, train_weights)
         valid_target, valid_weight = self.task.losses['xgb_gpu'].fw_func(valid_target, valid_weights)
         xgb_train = xgb.DMatrix(train_data, label=train_target, weight=train_weight)
         xgb_valid = xgb.DMatrix(valid_data, label=valid_target, weight=valid_weight)
+        params['gpu_id'] = dev_id
         model = xgb.train(params, xgb_train, num_boost_round=num_trees, evals=[(xgb_train, 'train'), (xgb_valid, 'valid')],
                           obj=fobj, feval=feval, early_stopping_rounds=early_stopping_rounds, verbose_eval=verbose_eval
                           )
@@ -261,6 +274,8 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
         val_pred = self.task.losses['xgb_gpu'].bw_func(val_pred)
 
         print(perf_counter() - st, "xgb single fold time")
+        with cp.cuda.Device(0):
+            val_pred = cp.copy(val_pred)
         return model, val_pred
 
     def predict_single_fold(self, model: xgb.Booster, dataset: TabularDatasetGpu) -> np.ndarray:

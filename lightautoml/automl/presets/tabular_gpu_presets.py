@@ -223,7 +223,8 @@ class TabularAutoML_gpu(AutoMLPreset):
 
         if self.general_params["use_algos"] == "auto":
             # TODO: More rules and add cases
-            self.general_params["use_algos"] = [["linear_l2", "cb", "cb_tuned"]]
+            self.general_params["use_algos"] = [["linear_l2", "cb", "lgb"]]
+            #self.general_params["use_algos"] = [["linear_l2", "cb", "cb_tuned"]]
             #self.general_params["use_algos"] = [["lgb", "lgb_tuned", "linear_l2", "cb", "cb_tuned"]]
             if self.task.name == "multiclass" and multilevel_avail:
                 self.general_params["use_algos"].append(["linear_l2", "cb"])

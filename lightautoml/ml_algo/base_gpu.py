@@ -120,7 +120,14 @@ class TabularMLAlgo_gpu(TabularMLAlgo):
             n_folds = len(train_valid_iterator)
             num_its = int(np.ceil(n_folds/n_parts))
 
-            inds = np.array_split(np.arange(n_folds), num_its)
+            inds = []
+            for i in range(num_its):
+                left = n_folds - i*n_parts
+                if left > n_parts:
+                    inds.append(np.arange(i*n_parts, i*n_parts + n_parts)) 
+                elif left > 0:
+                    inds.append(np.arange(i*n_parts, i*n_parts + left))
+            #inds = np.array_split(np.arange(n_folds), num_its)
             inds = [x for x in inds if len(x) > 0]
 
             res = None

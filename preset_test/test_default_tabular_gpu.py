@@ -43,16 +43,17 @@ task_types = {'covertype.csv' : 'multiclass' , 'albert.csv' : 'binary',
 
 if __name__ == "__main__":
 
-    cluster = LocalCUDACluster(rmm_managed_memory=True, CUDA_VISIBLE_DEVICES="0,1",
-                               protocol="ucx", enable_nvlink=True,
-                               memory_limit="8GB")
+    #cluster = LocalCUDACluster(rmm_managed_memory=True, CUDA_VISIBLE_DEVICES="0,1",
+    #                           protocol="ucx", enable_nvlink=True,
+    #                           memory_limit="8GB")
 
-    client = Client(cluster)
-    client.run(cudf.set_allocator, "managed")
+    #client = Client(cluster)
+    #client.run(cudf.set_allocator, "managed")
 
     print(csv_files)
     #cur_file = csv_files[1]
     cur_file = "jobs_train.csv"
+    print(cur_file)
 
     data = pd.read_csv(cur_file)
     for col in data.columns:
