@@ -300,6 +300,7 @@ def get_numeric_roles_stat_gpu(train: GpuDataset,
     # check unique values
     unique_values = None
     top_freq_values = None
+
     if isinstance(train.data, cudf.DataFrame):
         #unique_values = [train.data[x].dropna().value_counts() for x in train.data.columns]
         #top_freq_values = [x.max() for x in unique_values]

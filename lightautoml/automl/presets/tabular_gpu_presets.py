@@ -11,6 +11,7 @@ from typing import Optional
 from typing import Sequence
 from typing import cast
 from typing import Union
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -64,22 +65,17 @@ from .utils import plot_pdp_with_distribution
 
 from .tabular_presets import TabularUtilizedAutoML
 
+from .tabular_presets import TabularAutoML
+
 GpuDataset = Union[CupyDataset, CudfDataset, DaskCudfDataset]
 
 _base_dir = os.path.dirname(__file__)
 logger = logging.getLogger(__name__)
 
 
-class TabularAutoML_gpu(AutoMLPreset):
+class TabularAutoML_gpu(TabularAutoML):
     """
-    Classic preset - work with tabular data.
-    Supported data roles - numbers, dates, categories.
-    Limitations:
-
-        - No memory management
-        - No text support
-
-    GPU support in catboost/xgboost and torch based linear models training.
+    TBA
     """
 
     _default_config_path = "tabular_gpu_config.yml"
@@ -96,117 +92,43 @@ class TabularAutoML_gpu(AutoMLPreset):
     def __init__(
         self,
         task: Task,
-        timeout: int = 3600,
-        memory_limit: int = 16,
-        cpu_limit: int = 4,
-        gpu_ids: Optional[str] = "all",
-        timing_params: Optional[dict] = None,
-        config_path: Optional[str] = None,
-        general_params: Optional[dict] = None,
-        reader_params: Optional[dict] = None,
-        read_csv_params: Optional[dict] = None,
-        nested_cv_params: Optional[dict] = None,
-        tuning_params: Optional[dict] = None,
-        selection_params: Optional[dict] = None,
-        lgb_params: Optional[dict] = None,
-        cb_params: Optional[dict] = None,
-        linear_l2_params: Optional[dict] = None,
-        gbm_pipeline_params: Optional[dict] = None,
-        linear_pipeline_params: Optional[dict] = None,
         client = None,
+        *args: Any,
+        **kwargs: Any
     ):
 
         """
-
-        Commonly _params kwargs (ex. timing_params) set via
-        config file (config_path argument).
-        If you need to change just few params, it's possible
-        to pass it as dict of dicts, like json.
-        To get available params please look on default config template.
-        Also you can find there param description.
-        To generate config template call
-        :meth:`TabularAutoML.get_config('config_path.yml')`.
-
-        Args:
-            task: Task to solve.
-            timeout: Timeout in seconds.
-            memory_limit: Memory limit that are passed to each automl.
-            cpu_limit: CPU limit that that are passed to each automl.
-            gpu_ids: GPU IDs that are passed to each automl.
-            timing_params: Timing param dict. Optional.
-            config_path: Path to config file.
-            general_params: General param dict.
-            reader_params: Reader param dict.
-            read_csv_params: Params to pass ``pandas.read_csv``
-              (case of train/predict from file).
-            nested_cv_params: Param dict for nested cross-validation.
-            tuning_params: Params of Optuna tuner.
-            selection_params: Params of feature selection.
-            lgb_params: Params of lightgbm model.
-            cb_params: Params of catboost model.
-            linear_l2_params: Params of linear model.
-            gbm_pipeline_params: Params of feature generation
-              for boosting models.
-            linear_pipeline_params: Params of feature generation
-              for linear models.
-
+        TBA
         """
-        super().__init__(task, timeout, memory_limit, cpu_limit, gpu_ids, timing_params, config_path)
+        super().__init__(task, *args, **kwargs)
         self.client = client
-
-        # upd manual params
-        for name, param in zip(
-            [
-                "general_params",
-                "reader_params",
-                "read_csv_params",
-                "nested_cv_params",
-                "tuning_params",
-                "selection_params",
-                "lgb_params",
-                "cb_params",
-                "linear_l2_params",
-                "gbm_pipeline_params",
-                "linear_pipeline_params",
-            ],
-            [
-                general_params,
-                reader_params,
-                read_csv_params,
-                nested_cv_params,
-                tuning_params,
-                selection_params,
-                lgb_params,
-                cb_params,
-                linear_l2_params,
-                gbm_pipeline_params,
-                linear_pipeline_params,
-            ],
-        ):
-            if param is None:
-                param = {}
-            self.__dict__[name] = upd_params(self.__dict__[name], param)
 
     def infer_auto_params(self, train_data: DataFrame, multilevel_avail: bool = False):
 
+        if torch.cuda.device_count() == 1:
+            self.general_params["parallel_folds"] = False
+            self.lgb_params["parallel_folds"] = False
+            self.cb_params["parallel_folds"] = False
+            self.linear_l2_params["parallel_folds"] = False
 
-        try:
-            val = self.general_params["parallel_folds"]
-        except KeyError:
-            val = False
+        else:
+            try:
+                val = self.general_params["parallel_folds"]
+            except KeyError:
+                val = False
 
-        try:
-            res = self.lgb_params["parallel_folds"]
-        except KeyError:
-            self.lgb_params["parallel_folds"] = val
-        try:
-            res = self.cb_params["parallel_folds"]
-        except KeyError:
-            self.cb_params["parallel_folds"] = val
-        try:
-            res = self.linear_l2_params["parallel_folds"]
-        except KeyError:
-            self.linear_l2_params["parallel_folds"] = val
+            try:
+                res = self.lgb_params["parallel_folds"]
+            except KeyError:
+                self.lgb_params["parallel_folds"] = val
+            try:
+                res = self.cb_params["parallel_folds"]
+            except KeyError:
+                self.cb_params["parallel_folds"] = val
+            try:
+                res = self.linear_l2_params["parallel_folds"]
+            except KeyError:
+                self.linear_l2_params["parallel_folds"] = val
 
         length = train_data.shape[0]
 
@@ -422,15 +344,14 @@ class TabularAutoML_gpu(AutoMLPreset):
             algo_key = key.split("_")[0]
             time_score = self.get_time_score(n_level, key)
             gbm_timer = self.timer.get_task_timer(algo_key, time_score)
-            if algo_key == "lgb":
+            if algo_key == "cb":
+                gbm_model = BoostCB_gpu(timer=gbm_timer, **self.cb_params)
+            elif algo_key == "lgb":
                 #gbm_model = BoostXGB(timer=gbm_timer, **self.lgb_params)
                 if self.task.device == "mgpu" and not self.lgb_params["parallel_folds"]:
                     gbm_model = BoostXGB_dask(client=self.client, timer=gbm_timer, **self.lgb_params)
                 else:
                     gbm_model = BoostXGB(timer=gbm_timer, **self.lgb_params)
-                
-            elif algo_key == "cb":
-                gbm_model = BoostCB_gpu(timer=gbm_timer, **self.cb_params)
             else:
                 raise ValueError("Wrong algo key")
 
@@ -505,7 +426,7 @@ class TabularAutoML_gpu(AutoMLPreset):
                 lvl.append(self.get_linear(n + 1, selector))
 
             gbm_models = [
-                x for x in ["lgb", "lgb_tuned", "cb", "cb_tuned"] if x in names and x.split("_")[0] in self.task.losses
+                x for x in ["cb", "cb_tuned", "lgb", "lgb_tuned"] if x in names and x.split("_")[0] in self.task.losses
             ]
 
             if len(gbm_models) > 0:
@@ -528,27 +449,6 @@ class TabularAutoML_gpu(AutoMLPreset):
             return_all_predictions=self.general_params["return_all_predictions"],
             timer=self.timer,
         )
-
-    def _get_read_csv_params(self):
-        try:
-            cols_to_read = self.reader.used_features
-            numeric_dtypes = {
-                x: self.reader.roles[x].dtype for x in self.reader.roles if self.reader.roles[x].name == "Numeric"
-            }
-        except AttributeError:
-            cols_to_read = []
-            numeric_dtypes = {}
-        # cols_to_read is empty if reader is not fitted
-        if len(cols_to_read) == 0:
-            cols_to_read = None
-
-        read_csv_params = copy(self.read_csv_params)
-        read_csv_params = {
-            **read_csv_params,
-            **{"usecols": cols_to_read, "dtype": numeric_dtypes},
-        }
-
-        return read_csv_params
 
     def fit_predict(
         self,
@@ -610,7 +510,7 @@ class TabularAutoML_gpu(AutoMLPreset):
         if valid_data is not None:
             data, _ = read_data(valid_data, valid_features, self.cpu_limit, self.read_csv_params)
 
-        oof_pred = super().fit_predict(train, roles=roles, cv_iter=cv_iter, valid_data=valid_data, verbose=verbose)
+        oof_pred = super(TabularAutoML_gpu.__bases__[0], self).fit_predict(train, roles=roles, cv_iter=cv_iter, valid_data=valid_data, verbose=verbose)
 
         return cast(GpuDataset, oof_pred)
 
@@ -655,11 +555,16 @@ class TabularAutoML_gpu(AutoMLPreset):
 
         """
 
+        if n_jobs != 1:
+            print("setting n_jobs to 1")
+            n_jobs = 1
+
         read_csv_params = self._get_read_csv_params()
 
-        if batch_size is None and n_jobs == 1:
+        if batch_size is None:
             data, _ = read_data(data, features_names, self.cpu_limit, read_csv_params)
-            pred = super().predict(data, features_names, return_all_predictions)
+
+            pred = super(TabularAutoML_gpu.__bases__[0], self).predict(data, features_names, return_all_predictions)
             return cast(GpuDataset, pred)
 
         data_generator = read_batch(
@@ -672,10 +577,6 @@ class TabularAutoML_gpu(AutoMLPreset):
 
         if n_jobs == 1:
             res = [self.predict(df, features_names, return_all_predictions) for df in data_generator]
-        else:
-            # TODO: Check here for pre_dispatch param
-            with Parallel(n_jobs, pre_dispatch=len(data_generator) + 1) as p:
-                res = p(delayed(self.predict)(df, features_names, return_all_predictions) for df in data_generator)
 
         res = CupyDataset(
             cp.concatenate([x.data for x in res], axis=0),
@@ -683,147 +584,11 @@ class TabularAutoML_gpu(AutoMLPreset):
             roles=res[0].roles,
         )
 
+        #if data input is from cpu then let it output cpu as well
+        #res = res.to_numpy()
+        #if data input is from gpu then let it ouput gpu as well
+
         return res
-
-    def get_feature_scores(
-        self,
-        calc_method: str = "fast",
-        data: Optional[ReadableToDf] = None,
-        features_names: Optional[Sequence[str]] = None,
-        silent: bool = True,
-    ):
-        if calc_method == "fast":
-            for level in self.levels:
-                for pipe in level:
-                    fi = pipe.pre_selection.get_features_score()
-                    if fi is not None:
-                        used_feats = set(self.collect_used_feats())
-                        fi = fi.reset_index()
-                        fi.columns = ["Feature", "Importance"]
-                        return fi[fi["Feature"].map(lambda x: x in used_feats)]
-
-            else:
-                if not silent:
-                    logger.info2("No feature importances to show. Please use another calculation method")
-                return None
-
-        if calc_method != "accurate":
-            if not silent:
-                logger.info2(
-                    "Unknown calc_method. "
-                    + "Currently supported methods for feature importances calculation are 'fast' and 'accurate'."
-                )
-            return None
-
-        if data is None:
-            if not silent:
-                logger.info2("Data parameter is not setup for accurate calculation method. Aborting...")
-            return None
-
-        read_csv_params = self._get_read_csv_params()
-        data, _ = read_data(data, features_names, self.cpu_limit, read_csv_params)
-        used_feats = self.collect_used_feats()
-        fi = calc_feats_permutation_imps(
-            self,
-            used_feats,
-            data,
-            self.reader.target,
-            self.task.get_dataset_metric(),
-            silent=silent,
-        )
-        return fi
-
-    def get_individual_pdp(
-        self,
-        test_data: ReadableToDf,
-        feature_name: str,
-        n_bins: Optional[int] = 30,
-        top_n_categories: Optional[int] = 10,
-        datetime_level: Optional[str] = "year",
-    ):
-        assert feature_name in self.reader._roles
-        assert datetime_level in ["year", "month", "dayofweek"]
-        test_i = test_data.copy()
-        # Numerical features
-        if self.reader._roles[feature_name].name == "Numeric":
-            counts, bin_edges = np.histogram(test_data[feature_name].dropna(), bins=n_bins)
-            grid = (bin_edges[:-1] + bin_edges[1:]) / 2
-            ys = []
-            for i in tqdm(grid):
-                test_i[feature_name] = i
-                preds = self.predict(test_i).data
-                ys.append(preds)
-        # Categorical features
-        if self.reader._roles[feature_name].name == "Category":
-            feature_cnt = test_data[feature_name].value_counts()
-            grid = list(feature_cnt.index.values[:top_n_categories])
-            counts = list(feature_cnt.values[:top_n_categories])
-            ys = []
-            for i in tqdm(grid):
-                test_i[feature_name] = i
-                preds = self.predict(test_i).data
-                ys.append(preds)
-            if len(feature_cnt) > top_n_categories:
-                freq_mapping = {feature_cnt.index[i]: i for i, _ in enumerate(feature_cnt)}
-                # add "OTHER" class
-                test_i = test_data.copy()
-                # sample from other classes with the same distribution
-                test_i[feature_name] = (
-                    test_i[feature_name][np.array([freq_mapping[k] for k in test_i[feature_name]]) > top_n_categories]
-                    .sample(n=test_data.shape[0], replace=True)
-                    .values
-                )
-                preds = self.predict(test_i).data
-                grid.append("<OTHER>")
-                ys.append(preds)
-                counts.append(feature_cnt.values[top_n_categories:].sum())
-        # Datetime Features
-        if self.reader._roles[feature_name].name == "Datetime":
-            test_data_read = self.reader.read(test_data)
-            feature_datetime = pd.arrays.DatetimeArray(test_data_read._data[feature_name])
-            if datetime_level == "year":
-                grid = np.unique([i.year for i in feature_datetime])
-            elif datetime_level == "month":
-                grid = np.arange(1, 13)
-            else:
-                grid = np.arange(7)
-            ys = []
-            for i in tqdm(grid):
-                test_i[feature_name] = change_datetime(feature_datetime, datetime_level, i)
-                preds = self.predict(test_i).data
-                ys.append(preds)
-            counts = Counter([getattr(i, datetime_level) for i in feature_datetime])
-            counts = [counts[i] for i in grid]
-        return grid, ys, counts
-
-    def plot_pdp(
-        self,
-        test_data: ReadableToDf,
-        feature_name: str,
-        individual: Optional[bool] = False,
-        n_bins: Optional[int] = 30,
-        top_n_categories: Optional[int] = 10,
-        top_n_classes: Optional[int] = 10,
-        datetime_level: Optional[str] = "year",
-    ):
-        grid, ys, counts = self.get_individual_pdp(
-            test_data=test_data,
-            feature_name=feature_name,
-            n_bins=n_bins,
-            top_n_categories=top_n_categories,
-            datetime_level=datetime_level,
-        )
-        plot_pdp_with_distribution(
-            test_data,
-            grid,
-            ys,
-            counts,
-            self.reader,
-            feature_name,
-            individual,
-            top_n_classes,
-            datetime_level,
-        )
 
 
 class TabularUtilizedAutoML_gpu(TabularUtilizedAutoML):

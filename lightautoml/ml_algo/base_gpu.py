@@ -108,8 +108,6 @@ class TabularMLAlgo_gpu(TabularMLAlgo):
                 (idx, train, valid) = train_valid[ind]
                 logger.info("===== Start working with \x1b[1mfold {}\x1b[0m for \x1b[1m{}\x1b[0m (par) =====".format(ind,self._name))
                 model, pred = fit_predict_single_fold(train, valid, dev_id)
-                #models.append(model)
-                #preds.append(pred)
                 return model, pred
 
             if self.task.device == "gpu":
@@ -153,8 +151,8 @@ class TabularMLAlgo_gpu(TabularMLAlgo):
                 self.timer.write_run_info()
                 if (n + 1) != num_its:
                     if self.timer.time_limit_exceeded():
-                        logger.warning('Time limit exceeded after calculating fold {0}'\
-                        .format(n))
+                        logger.warning('Time limit exceeded after calculating fold(s) {0}'\
+                        .format(inds[n]))
                         break
 
             logger.debug('Time history {0}. Time left {1}'\
@@ -162,16 +160,17 @@ class TabularMLAlgo_gpu(TabularMLAlgo):
 
             self.models = models
             for n, (idx, _, _) in enumerate(train_valid_iterator):
-                if isinstance(preds[n], (dask_cudf.DataFrame, dask_cudf.Series, dd.DataFrame, dd.Series)):
-                    preds_arr[idx] += preds[n]\
-                        .compute().values\
-                        .reshape(preds[n].shape[0].compute(), -1)
-                    counter_arr[idx] += 1
-                else:
-                    if isinstance(preds[n], np.ndarray):
-                        preds[n] = cp.asarray(preds[n])
-                    preds_arr[idx] += preds[n].reshape((preds[n].shape[0], -1))
-                    counter_arr[idx] += 1
+                if n < len(preds):
+                    if isinstance(preds[n], (dask_cudf.DataFrame, dask_cudf.Series, dd.DataFrame, dd.Series)):
+                        preds_arr[idx] += preds[n]\
+                            .compute().values\
+                            .reshape(preds[n].shape[0].compute(), -1)
+                        counter_arr[idx] += 1
+                    else:
+                        if isinstance(preds[n], np.ndarray):
+                            preds[n] = cp.asarray(preds[n])
+                        preds_arr[idx] += preds[n].reshape((preds[n].shape[0], -1))
+                        counter_arr[idx] += 1
         else:
             for n, (idx, train, valid) in enumerate(train_valid_iterator):
                 logger.info("===== Start working with \x1b[1mfold {}\x1b[0m for \x1b[1m{}\x1b[0m (orig) =====".format(n, self._name))

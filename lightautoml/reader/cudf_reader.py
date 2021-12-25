@@ -122,6 +122,9 @@ class CudfReader(PandasToPandasReader):
         if isinstance(train_data, (pd.DataFrame, pd.Series)):
             cp.cuda.runtime.setDevice(self.device_num)
             train_data = cudf.from_pandas(train_data, nan_as_null=False)
+            for col in train_data.columns:
+                if pd.api.types.is_bool_dtype(train_data[col]):
+                    train_data[col] = train_data[col].astype(cp.float32).fillna(cp.nan)
             kwargs['target'] = train_data[self.target]
 
         elif isinstance(train_data, (cudf.DataFrame, cudf.Series)):

@@ -609,4 +609,4 @@ class TorchBasedLinearRegression(TorchBasedLinearEstimator):
             predicted target values.
 
         """
-        return super().predict(data, dev_id)[:, 0]
+        return super().predict(data, dev_id)

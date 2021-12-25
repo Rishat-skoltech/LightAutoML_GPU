@@ -80,7 +80,8 @@ def mean_squared_error_gpu(y_true, y_pred,
         err_sq = da.multiply(err, err)
         mean = err_sq.mean().compute()
     else:
-        mean = mean_squared_error(y_true, y_pred, sample_weight)
+        err_sq = cp.square(y_pred - y_true)
+        mean = err_sq.mean()
 
     return mean
 

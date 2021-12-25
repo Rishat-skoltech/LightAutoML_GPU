@@ -20,6 +20,7 @@ import cupy as cp
 from pandas import Series
 
 from ..dataset.gpu_dataset import DaskCudfDataset
+from ..dataset.gpu_dataset import CudfDataset
 from .base_gpu import TabularMLAlgo_gpu
 from .base_gpu import TabularDatasetGpu
 from ..pipelines.selection.base import ImportanceEstimator
@@ -251,7 +252,9 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
                     valid_weights = valid_weights.compute()
                 train_data = train_data.compute()
                 valid_data = valid_data.compute()
-            else:
+            elif type(train) == CudfDataset:
+                pass
+            elif type(train_target) == cp.ndarray:
                 train_target = cp.copy(train_target)
                 if train_weights is not None:
                     train_weights = cp.copy(train_weights)
@@ -260,6 +263,9 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
                     valid_weights = cp.copy(valid_weights)
                 train_data = cp.copy(train_data)
                 valid_data = cp.copy(valid_data)
+            else:
+                raise NotImplementedError("given type of input is not implemented:" + str(type(train_target)) + "class:" + str(self._name))
+
 
         params, num_trees, early_stopping_rounds, verbose_eval, fobj, feval = self._infer_params()
         train_target, train_weight = self.task.losses['xgb_gpu'].fw_func(train_target, train_weights)
