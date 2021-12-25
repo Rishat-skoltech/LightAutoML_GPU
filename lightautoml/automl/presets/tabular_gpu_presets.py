@@ -26,6 +26,7 @@ from ...addons.utilization import TimeUtilization
 from ...dataset.gpu_dataset import CupyDataset
 from ...dataset.gpu_dataset import CudfDataset
 from ...dataset.gpu_dataset import DaskCudfDataset
+from ...dataset.np_pd_dataset import NumpyDataset
 from ...ml_algo.boost_cb_gpu import BoostCB_gpu
 from ...ml_algo.boost_xgb_gpu import BoostXGB
 from ...ml_algo.boost_xgb_gpu import BoostXGB_dask
@@ -512,7 +513,7 @@ class TabularAutoML_gpu(TabularAutoML):
 
         oof_pred = super(TabularAutoML_gpu.__bases__[0], self).fit_predict(train, roles=roles, cv_iter=cv_iter, valid_data=valid_data, verbose=verbose)
 
-        return cast(GpuDataset, oof_pred)
+        return oof_pred.to_numpy()
 
     def predict(
         self,
@@ -521,7 +522,7 @@ class TabularAutoML_gpu(TabularAutoML):
         batch_size: Optional[int] = None,
         n_jobs: Optional[int] = 1,
         return_all_predictions: Optional[bool] = None,
-    ) -> CupyDataset:
+    ) -> NumpyDataset:
         """Get dataset with predictions.
 
         Almost same as :meth:`lightautoml.automl.base.AutoML.predict`
@@ -556,7 +557,6 @@ class TabularAutoML_gpu(TabularAutoML):
         """
 
         if n_jobs != 1:
-            print("setting n_jobs to 1")
             n_jobs = 1
 
         read_csv_params = self._get_read_csv_params()
@@ -565,7 +565,7 @@ class TabularAutoML_gpu(TabularAutoML):
             data, _ = read_data(data, features_names, self.cpu_limit, read_csv_params)
 
             pred = super(TabularAutoML_gpu.__bases__[0], self).predict(data, features_names, return_all_predictions)
-            return cast(GpuDataset, pred)
+            return pred.to_numpy()
 
         data_generator = read_batch(
             data,
@@ -585,7 +585,7 @@ class TabularAutoML_gpu(TabularAutoML):
         )
 
         #if data input is from cpu then let it output cpu as well
-        #res = res.to_numpy()
+        res = res.to_numpy()
         #if data input is from gpu then let it ouput gpu as well
 
         return res

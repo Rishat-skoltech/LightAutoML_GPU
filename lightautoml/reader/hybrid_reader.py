@@ -23,6 +23,8 @@ from ..dataset.gpu_dataset import CudfDataset
 from ..dataset.gpu_dataset import DaskCudfDataset
 from ..dataset.np_pd_dataset import PandasDataset
 
+from time import perf_counter
+
 from joblib import Parallel, delayed
 
 import torch
@@ -92,6 +94,8 @@ class HybridReader(CudfReader):
             Dataset with selected features.
 
         """
+        st = perf_counter()
+
         parsed_roles, kwargs = self._prepare_roles_and_kwargs(roles, train_data, **kwargs)
 
         if self.num_gpu_readers is None and self.task.device == "mgpu":
@@ -200,6 +204,8 @@ class HybridReader(CudfReader):
                                                index_ok=self.index_ok, compute = self.compute)
 
         output = self.final_reader.fit_read(train_data, roles=self.final_roles, roles_parsed=True)
+
+        print("hybrid reader:", perf_counter() - st)
 
         return output
 

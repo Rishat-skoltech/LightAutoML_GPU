@@ -295,19 +295,16 @@ class AutoML:
 
             level_predictions = []
             for _n, ml_pipe in enumerate(level):
-                print("298")
                 level_predictions.append(ml_pipe.predict(dataset))
 
             if n != len(self.levels):
 
-                print(303)
                 level_predictions = concatenate(level_predictions)
 
                 if self.skip_conn:
 
                     try:
                         # convert to initital dataset type
-                        print(310)
                         level_predictions = dataset.from_dataset(level_predictions)
                     except TypeError:
                         raise TypeError(
@@ -317,7 +314,6 @@ class AutoML:
                 else:
                     dataset = level_predictions
             else:
-                print("HERE")
                 if (return_all_predictions is None and self.return_all_predictions) or return_all_predictions:
                     return concatenate(level_predictions)
                 return self.blender.predict(level_predictions)

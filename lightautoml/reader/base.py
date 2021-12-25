@@ -37,6 +37,7 @@ from .guess_roles import rule_based_cat_handler_guess
 from .guess_roles import rule_based_roles_guess
 from .utils import set_sklearn_folds
 
+from time import perf_counter
 
 logger = logging.getLogger(__name__)
 
@@ -271,6 +272,8 @@ class PandasToPandasReader(Reader):
             Dataset with selected features.
 
         """
+        st = perf_counter()
+
         logger.info("\x1b[1mTrain data shape: {}\x1b[0m\n".format(train_data.shape))
 
         if roles is None:
@@ -385,6 +388,8 @@ class PandasToPandasReader(Reader):
             self._roles = {x: new_roles[x] for x in new_roles if x not in droplist}
             dataset = PandasDataset(train_data[self.used_features], self.roles, task=self.task, **kwargs)
 
+        print("pandas reader:", perf_counter() - st)
+
         return dataset
 
     def _create_target(self, target: Series):
@@ -433,6 +438,8 @@ class PandasToPandasReader(Reader):
 
         """
         name = name.lower()
+        print(name)
+        print(self.roles_params)
         try:
             role_params = self.roles_params[name]
         except KeyError:

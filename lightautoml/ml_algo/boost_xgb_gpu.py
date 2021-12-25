@@ -253,7 +253,14 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
                 train_data = train_data.compute()
                 valid_data = valid_data.compute()
             elif type(train) == CudfDataset:
-                pass
+                train_target = train_target.copy()
+                if train_weights is not None:
+                    train_weights = train_weights.copy()
+                valid_target = valid_target.copy()
+                if valid_weights is not None:
+                    valid_weights = valid_weights.copy()
+                train_data = train_data.copy()
+                valid_data = valid_data.copy()
             elif type(train_target) == cp.ndarray:
                 train_target = cp.copy(train_target)
                 if train_weights is not None:
@@ -299,8 +306,6 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
         if type(dataset) == DaskCudfDataset:
             dataset_data = dataset_data.compute()
 
-        print(type(dataset_data))
-        print(dataset_data.shape)
         pred = self.task.losses['xgb_gpu'].bw_func(model.inplace_predict(dataset_data))
 
         return pred

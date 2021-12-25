@@ -316,11 +316,11 @@ if __name__ == "__main__":
 
         # run automl
         # this is for small amounts of data
-        automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="gpu"), timeout=3600)
+        automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="mgpu"), timeout=3600)
         # this is for bigger amounts of data
         #automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="mgpu"))
 
-        oof_predictions = automl.fit_predict(data, roles={TargetRole():TARGETS_DICT[cur_file]}, verbose=2)
+        oof_predictions = automl.fit_predict(data, roles={'target':TARGETS_DICT[cur_file]}, verbose=2)
 
         print("NOW DOING PREDICTIONS")
 
