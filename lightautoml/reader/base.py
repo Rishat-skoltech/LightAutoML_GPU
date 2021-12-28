@@ -438,8 +438,6 @@ class PandasToPandasReader(Reader):
 
         """
         name = name.lower()
-        print(name)
-        print(self.roles_params)
         try:
             role_params = self.roles_params[name]
         except KeyError:

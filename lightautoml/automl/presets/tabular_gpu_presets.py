@@ -409,6 +409,7 @@ class TabularAutoML_gpu(TabularAutoML):
         multilevel_avail = fit_args["valid_data"] is None and fit_args["cv_iter"] is None
 
         self.infer_auto_params(train_data, multilevel_avail)
+
         reader = HybridReader(task=self.task, **self.reader_params)
 
         pre_selector = self.get_selector()

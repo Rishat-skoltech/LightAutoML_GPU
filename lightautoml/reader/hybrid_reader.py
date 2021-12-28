@@ -61,7 +61,7 @@ class HybridReader(CudfReader):
             task: Task object.
 
         """
-        super().__init__(task, *args, *kwargs)
+        super().__init__(task, *args, **kwargs)
         self.num_cpu_readers = num_cpu_readers
         self.num_gpu_readers = num_gpu_readers
         self.gpu_ratio = gpu_ratio
