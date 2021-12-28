@@ -15,7 +15,7 @@ general_params:
   # The smallest weight in weighted blender (if lower - the algo will be dropped from final model)
   weighted_blender_max_nonzero_coef: 0.05
   # If we should try to parallelize multigpu usage across parallel folds
-  parallel_folds: True
+  parallel_folds: False
 
 reader_params:
   # sample of data to perform analysis
@@ -108,7 +108,7 @@ lgb_params:
   default_params:
     nthread: 100
   freeze_defaults: False
-  parallel_folds: True
+  #parallel_folds: True
 
 # params for BoostCB_gpu MLAlgo. Note - params are default and may be changed during train if not freeze_defaults
 cb_params:
@@ -118,14 +118,14 @@ cb_params:
     task_type: 'GPU'
     thread_count: 100
   freeze_defaults: False
-  parallel_folds: True
+  #parallel_folds: True
 
 # params for LinearLBFGS_gpu MLAlgo
 # no tuner needed for this algo - regularization params are found during fit
 linear_l2_params:
   default_params: { }
   freeze_defaults: False
-  parallel_folds: True
+  #parallel_folds: True
 
 gbm_pipeline_params:
   # max number of categories to generate intersections

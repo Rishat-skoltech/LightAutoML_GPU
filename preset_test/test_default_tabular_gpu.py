@@ -278,12 +278,12 @@ task_types = {'covertype.csv' : 'multiclass' , 'albert.csv' : 'binary',
 
 if __name__ == "__main__":
 
-    #cluster = LocalCUDACluster(rmm_managed_memory=True, CUDA_VISIBLE_DEVICES="0,1",
-    #                           protocol="ucx", enable_nvlink=True,
-    #                           memory_limit="8GB")
+    cluster = LocalCUDACluster(rmm_managed_memory=True, CUDA_VISIBLE_DEVICES="0,1",
+                               protocol="ucx", enable_nvlink=True,
+                               memory_limit="8GB")
 
-    #client = Client(cluster)
-    #client.run(cudf.set_allocator, "managed")
+    client = Client(cluster)
+    client.run(cudf.set_allocator, "managed")
 
     cudf.set_allocator("managed")
 
@@ -316,7 +316,7 @@ if __name__ == "__main__":
 
         # run automl
         # this is for small amounts of data
-        automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="gpu"), timeout=3600)
+        automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="mgpu"), timeout=3600, client=client)
         # this is for bigger amounts of data
         #automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="mgpu"))
 

@@ -392,7 +392,6 @@ class BoostCB_gpu(TabularMLAlgo_gpu, ImportanceEstimator):
                 pool,
                 thread_count=params['thread_count']
             )
-
         pred = self.task.losses['cb'].bw_func(pred)
 
         return pred
