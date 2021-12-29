@@ -83,8 +83,8 @@ class TabularAutoML_gpu(TabularAutoML):
 
     # set initial runtime rate guess for first level models
     _time_scores = {
-        "lgb": 2,
-        "lgb_tuned": 6,
+        "xgb": 2,
+        "xgb_tuned": 6,
         "linear_l2": 0.7,
         "cb": 1,
         "cb_tuned": 3,
@@ -93,22 +93,70 @@ class TabularAutoML_gpu(TabularAutoML):
     def __init__(
         self,
         task: Task,
-        client = None,
-        *args: Any,
-        **kwargs: Any
+        timeout: int = 3600,
+        memory_limit: int = 16,
+        cpu_limit: int = 4,
+        gpu_ids: Optional[str] = "all",
+        timing_params: Optional[dict] = None,
+        config_path: Optional[str] = None,
+        general_params: Optional[dict] = None,
+        reader_params: Optional[dict] = None,
+        read_csv_params: Optional[dict] = None,
+        nested_cv_params: Optional[dict] = None,
+        tuning_params: Optional[dict] = None,
+        selection_params: Optional[dict] = None,
+        xgb_params: Optional[dict] = None,
+        cb_params: Optional[dict] = None,
+        linear_l2_params: Optional[dict] = None,
+        gbm_pipeline_params: Optional[dict] = None,
+        linear_pipeline_params: Optional[dict] = None,
+        client = None
     ):
 
         """
         TBA
         """
-        super().__init__(task, *args, **kwargs)
+        super(TabularAutoML_gpu.__bases__[0], self).__init__(task, timeout, memory_limit, cpu_limit, gpu_ids, timing_params, config_path)
+
+        # upd manual params
+        for name, param in zip(
+            [
+                "general_params",
+                "reader_params",
+                "read_csv_params",
+                "nested_cv_params",
+                "tuning_params",
+                "selection_params",
+                "xgb_params",
+                "cb_params",
+                "linear_l2_params",
+                "gbm_pipeline_params",
+                "linear_pipeline_params",
+            ],
+            [
+                general_params,
+                reader_params,
+                read_csv_params,
+                nested_cv_params,
+                tuning_params,
+                selection_params,
+                xgb_params,
+                cb_params,
+                linear_l2_params,
+                gbm_pipeline_params,
+                linear_pipeline_params,
+            ],
+        ):
+            if param is None:
+                param = {}
+            self.__dict__[name] = upd_params(self.__dict__[name], param)
         self.client = client
 
     def infer_auto_params(self, train_data: DataFrame, multilevel_avail: bool = False):
 
         if torch.cuda.device_count() == 1:
             self.general_params["parallel_folds"] = False
-            self.lgb_params["parallel_folds"] = False
+            self.xgb_params["parallel_folds"] = False
             self.cb_params["parallel_folds"] = False
             self.linear_l2_params["parallel_folds"] = False
 
@@ -119,9 +167,9 @@ class TabularAutoML_gpu(TabularAutoML):
                 val = False
 
             try:
-                res = self.lgb_params["parallel_folds"]
+                res = self.xgb_params["parallel_folds"]
             except KeyError:
-                self.lgb_params["parallel_folds"] = val
+                self.xgb_params["parallel_folds"] = val
             try:
                 res = self.cb_params["parallel_folds"]
             except KeyError:
@@ -146,9 +194,9 @@ class TabularAutoML_gpu(TabularAutoML):
 
         if self.general_params["use_algos"] == "auto":
             # TODO: More rules and add cases
-            self.general_params["use_algos"] = [["linear_l2", "cb", "lgb"]]
+            self.general_params["use_algos"] = [["linear_l2", "cb", "xgb"]]
             #self.general_params["use_algos"] = [["linear_l2", "cb", "cb_tuned"]]
-            #self.general_params["use_algos"] = [["lgb", "lgb_tuned", "linear_l2", "cb", "cb_tuned"]]
+            #self.general_params["use_algos"] = [["xgb", "xgb_tuned", "linear_l2", "cb", "cb_tuned"]]
             if self.task.name == "multiclass" and multilevel_avail:
                 self.general_params["use_algos"].append(["linear_l2", "cb"])
 
@@ -171,7 +219,7 @@ class TabularAutoML_gpu(TabularAutoML):
             self.cb_params["default_params"]["devices"] = cur_gpu_ids.replace(",", ":")
             self.cb_params["gpu_ids"] = cur_gpu_ids.split(",")
             
-        if self.task.device == 'gpu' or self.lgb_params["parallel_folds"]:
+        if self.task.device == 'gpu' or self.xgb_params["parallel_folds"]:
             gpu_cnt = 1
         else:
             gpu_cnt = torch.cuda.device_count()
@@ -182,7 +230,7 @@ class TabularAutoML_gpu(TabularAutoML):
             else:
                 cur_gpu_ids = copy(gpu_ids)
         
-            self.lgb_params["gpu_ids"] = cur_gpu_ids.split(",")
+            self.xgb_params["gpu_ids"] = cur_gpu_ids.split(",")
 
         if self.task.device == 'gpu' or self.linear_l2_params["parallel_folds"]:
             gpu_cnt = 1
@@ -204,8 +252,8 @@ class TabularAutoML_gpu(TabularAutoML):
         self.cb_params["default_params"]["thread_count"] = min(
             self.cb_params["default_params"]["thread_count"], cpu_cnt
         )
-        self.lgb_params["default_params"]["nthread"] = min(
-            self.lgb_params["default_params"]["nthread"], cpu_cnt
+        self.xgb_params["default_params"]["nthread"] = min(
+            self.xgb_params["default_params"]["nthread"], cpu_cnt
         )
         self.reader_params["n_jobs"] = min(self.reader_params["n_jobs"], cpu_cnt)
         if not self.linear_l2_params["parallel_folds"] and self.task.device=="mgpu":
@@ -227,8 +275,8 @@ class TabularAutoML_gpu(TabularAutoML):
         if model_type in ["cb", "cb_tuned"]:
             if self.cb_params["parallel_folds"]:
                 score /= num_gpus
-        if model_type in ["lgb", "lgb_tuned"]:
-            if self.lgb_params["parallel_folds"]:
+        if model_type in ["xgb", "xgb_tuned"]:
+            if self.xgb_params["parallel_folds"]:
                 score /= num_gpus
         if model_type=="linear_l2":
             if self.linear_l2_params["parallel_folds"]:
@@ -253,10 +301,10 @@ class TabularAutoML_gpu(TabularAutoML):
 
     def get_selector(self, n_level: Optional[int] = 1) -> SelectionPipeline:
         selection_params = self.selection_params
-        # lgb_params
-        lgb_params = deepcopy(self.lgb_params)
-        lgb_params["default_params"] = {
-            **lgb_params["default_params"],
+        # xgb_params
+        cb_params = deepcopy(self.cb_params)
+        cb_params["default_params"] = {
+            **cb_params["default_params"],
             **{"feature_fraction": 1},
         }
 
@@ -267,13 +315,12 @@ class TabularAutoML_gpu(TabularAutoML):
         if mode > 0:
             # if we need selector - define model
             # timer will be useful to estimate time for next gbm runs
-            time_score = self.get_time_score(n_level, "lgb", False)
+            time_score = self.get_time_score(n_level, "cb", False)
 
-            sel_timer_0 = self.timer.get_task_timer("lgb", time_score)
+            sel_timer_0 = self.timer.get_task_timer("cb", time_score)
             selection_feats = LGBSimpleFeatures_gpu()
 
             selection_gbm = BoostCB_gpu(timer=sel_timer_0, **self.cb_params)
-            #selection_gbm = BoostXGB(timer=sel_timer_0, **lgb_params)
             selection_gbm.set_prefix("Selector")
 
             if selection_params["importance_type"] == "permutation":
@@ -289,12 +336,11 @@ class TabularAutoML_gpu(TabularAutoML):
                 fit_on_holdout=selection_params["fit_on_holdout"],
             )
             if mode == 2:
-                time_score = self.get_time_score(n_level, "lgb", False)
+                time_score = self.get_time_score(n_level, "cb", False)
 
-                sel_timer_1 = self.timer.get_task_timer("lgb", time_score)
+                sel_timer_1 = self.timer.get_task_timer("cb", time_score)
                 selection_feats = LGBSimpleFeatures_gpu()
                 selection_gbm = BoostCB_gpu(timer=sel_timer_1, **self.cb_params)
-                #selection_gbm = BoostXGB(timer=sel_timer_1, **lgb_params)
                 selection_gbm.set_prefix("Selector")
 
                 # TODO: Check about reusing permutation importance
@@ -347,12 +393,12 @@ class TabularAutoML_gpu(TabularAutoML):
             gbm_timer = self.timer.get_task_timer(algo_key, time_score)
             if algo_key == "cb":
                 gbm_model = BoostCB_gpu(timer=gbm_timer, **self.cb_params)
-            elif algo_key == "lgb":
-                #gbm_model = BoostXGB(timer=gbm_timer, **self.lgb_params)
-                if self.task.device == "mgpu" and not self.lgb_params["parallel_folds"]:
-                    gbm_model = BoostXGB_dask(client=self.client, timer=gbm_timer, **self.lgb_params)
+            elif algo_key == "xgb":
+                #gbm_model = BoostXGB(timer=gbm_timer, **self.xgb_params)
+                if self.task.device == "mgpu" and not self.xgb_params["parallel_folds"]:
+                    gbm_model = BoostXGB_dask(client=self.client, timer=gbm_timer, **self.xgb_params)
                 else:
-                    gbm_model = BoostXGB(timer=gbm_timer, **self.lgb_params)
+                    gbm_model = BoostXGB(timer=gbm_timer, **self.xgb_params)
             else:
                 raise ValueError("Wrong algo key")
 
@@ -364,8 +410,8 @@ class TabularAutoML_gpu(TabularAutoML):
                         gpu_cnt = 1
                     else:
                         gpu_cnt = torch.cuda.device_count()
-                elif algo_key == "lgb":
-                    folds = self.lgb_params["parallel_folds"]
+                elif algo_key == "xgb":
+                    folds = self.xgb_params["parallel_folds"]
                     if self.task.device == 'gpu':
                         gpu_cnt = 1
                     else:
@@ -428,7 +474,7 @@ class TabularAutoML_gpu(TabularAutoML):
                 lvl.append(self.get_linear(n + 1, selector))
 
             gbm_models = [
-                x for x in ["cb", "cb_tuned", "lgb", "lgb_tuned"] if x in names and x.split("_")[0] in self.task.losses
+                x for x in ["cb", "cb_tuned", "xgb", "xgb_tuned"] if x in names and x.split("_")[0] in self.task.losses
             ]
 
             if len(gbm_models) > 0:
@@ -631,7 +677,7 @@ class TabularUtilizedAutoML_gpu(TabularUtilizedAutoML):
         """
         if configs_list is None:
             configs_list = [
-                os.path.join(_base_dir, "tabular_configs", x)
+                os.path.join(_base_dir, "tabular_configs_gpu", x)
                 for x in [
                     "conf_0_sel_type_0.yml",
                     "conf_1_sel_type_1.yml",

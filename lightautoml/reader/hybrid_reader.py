@@ -103,7 +103,7 @@ class HybridReader(CudfReader):
         elif self.num_gpu_readers is None and self.task.device == "gpu":
             self.num_gpu_readers = 1
 
-        self.num_cpu_readers = 0
+        #self.num_cpu_readers = 0
 
         if self.num_cpu_readers is None:
             self.num_cpu_readers = min(os.cpu_count() - self.num_gpu_readers, 4)
