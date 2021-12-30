@@ -1353,9 +1353,14 @@ class OrdinalEncoder_gpu(LabelEncoder_gpu):
                 co = role.unknown
                 cnts = subs[i].value_counts(dropna=False)
                 cnts = cnts.astype(cp.float32)[cnts > co].reset_index()
-                cnts = cudf.Series(cnts['index'].astype(str).rank(), 
-                                   index=cnts['index'],
-                                   dtype=cp.float32)
+                if len(cnts) > 1500:
+                    cnts = cudf.Series(cnts['index'][:1500].astype(str).rank(), 
+                                       index=cnts['index'][:1500],
+                                       dtype=cp.float32)
+                else:
+                    cnts = cudf.Series(cnts['index'].astype(str).rank(), 
+                                       index=cnts['index'],
+                                       dtype=cp.float32)
                 cnts = cnts.append(cudf.Series([cnts.shape[0] + 1],
                                    index=[cp.nan], dtype=cp.float32))
                 self.dicts[i] = cnts
@@ -1383,9 +1388,14 @@ class OrdinalEncoder_gpu(LabelEncoder_gpu):
                 co = role.unknown
                 cnts = data[i].value_counts(dropna=False)
                 cnts = cnts.astype(cp.float32)[cnts > co].compute().reset_index()
-                cnts = cudf.Series(cnts['index'].astype(str).rank(),
-                                   index=cnts['index'],
-                                   dtype=cp.float32)
+                if len(cnts) > 1500:
+                    cnts = cudf.Series(cnts['index'][:1500].astype(str).rank(), 
+                                       index=cnts['index'][:1500],
+                                       dtype=cp.float32)
+                else:
+                    cnts = cudf.Series(cnts['index'].astype(str).rank(), 
+                                       index=cnts['index'],
+                                       dtype=cp.float32)
                 cnts = cnts.append(cudf.Series([cnts.shape[0] + 1],
                                    index=[cp.nan],
                                    dtype=cp.float32))

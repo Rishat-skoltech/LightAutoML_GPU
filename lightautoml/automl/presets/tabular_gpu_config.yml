@@ -15,7 +15,7 @@ general_params:
   # The smallest weight in weighted blender (if lower - the algo will be dropped from final model)
   weighted_blender_max_nonzero_coef: 0.05
   # If we should try to parallelize multigpu usage across parallel folds
-  parallel_folds: False
+  parallel_folds: True
 
 reader_params:
   # sample of data to perform analysis

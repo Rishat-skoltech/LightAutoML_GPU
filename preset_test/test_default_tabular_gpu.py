@@ -278,20 +278,21 @@ task_types = {'covertype.csv' : 'multiclass' , 'albert.csv' : 'binary',
 
 if __name__ == "__main__":
 
-    cluster = LocalCUDACluster(rmm_managed_memory=True, CUDA_VISIBLE_DEVICES="0,1",
-                               protocol="ucx", enable_nvlink=True,
-                               memory_limit="8GB")
+    #cluster = LocalCUDACluster(rmm_managed_memory=True, CUDA_VISIBLE_DEVICES="0,1",
+    #                           protocol="ucx", enable_nvlink=True,
+    #                           memory_limit="8GB")
 
-    client = Client(cluster)
-    client.run(cudf.set_allocator, "managed")
+    #client = Client(cluster)
+    #client.run(cudf.set_allocator, "managed")
 
     cudf.set_allocator("managed")
 
     for i, cur_file in enumerate(csv_files):
-        if cur_file in ['dilbert.csv', 'volkert.csv', 'KDDCup09_appetency.csv', 'talkingdata-adtracking-fraud-detection/train.csv', 'springleaf-marketing-response/train.csv', 'bnp-paribas-cardif-claims-management/train.csv']:
-            continue
-        else:
+        #if cur_file in ['dilbert.csv', 'volkert.csv', 'KDDCup09_appetency.csv', 'talkingdata-adtracking-fraud-detection/train.csv', 'springleaf-marketing-response/train.csv', 'bnp-paribas-cardif-claims-management/train.csv']:
+        if cur_file in ['KDDCup09_appetency.csv']:
             pass
+        else:
+            continue
         print("####################################")
         print(cur_file)
         print(task_types[cur_file])
@@ -316,7 +317,7 @@ if __name__ == "__main__":
 
         # run automl
         # this is for small amounts of data
-        automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="mgpu"), timeout=3600, client=client)
+        automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="gpu"), timeout=3600)#, client=client)
         # this is for bigger amounts of data
         #automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="mgpu"))
 
