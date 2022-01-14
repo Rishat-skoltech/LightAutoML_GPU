@@ -451,7 +451,7 @@ class Task:
             )
 
             for loss_key, loss_factory in zip(
-                ["lgb", "sklearn", "torch", "cb", "torch_gpu", "cuml", "xgb_gpu"],
+                ["lgb", "sklearn", "torch", "cb", "torch_gpu", "cuml", "xgb"],
                 [LGBLoss, SKLoss, TORCHLoss, CBLoss, TORCHLoss_gpu, CUMLLoss, XGBLoss_gpu]
             ):
                 try:

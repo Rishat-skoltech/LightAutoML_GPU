@@ -87,7 +87,7 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
             verbose_eval = 10
 
         # get objective params
-        loss = self.task.losses['xgb_gpu']
+        loss = self.task.losses['xgb']
         params['objective'] = loss.fobj_name
         fobj = loss.fobj
 
@@ -275,8 +275,8 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
 
 
         params, num_trees, early_stopping_rounds, verbose_eval, fobj, feval = self._infer_params()
-        train_target, train_weight = self.task.losses['xgb_gpu'].fw_func(train_target, train_weights)
-        valid_target, valid_weight = self.task.losses['xgb_gpu'].fw_func(valid_target, valid_weights)
+        train_target, train_weight = self.task.losses['xgb'].fw_func(train_target, train_weights)
+        valid_target, valid_weight = self.task.losses['xgb'].fw_func(valid_target, valid_weights)
         xgb_train = xgb.DMatrix(train_data, label=train_target, weight=train_weight)
         xgb_valid = xgb.DMatrix(valid_data, label=valid_target, weight=valid_weight)
         params['gpu_id'] = dev_id
@@ -284,7 +284,7 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
                           obj=fobj, feval=feval, early_stopping_rounds=early_stopping_rounds, verbose_eval=verbose_eval
                           )
         val_pred = model.inplace_predict(valid_data)
-        val_pred = self.task.losses['xgb_gpu'].bw_func(val_pred)
+        val_pred = self.task.losses['xgb'].bw_func(val_pred)
 
         print(perf_counter() - st, "xgb single fold time")
         with cp.cuda.Device(0):
@@ -306,7 +306,7 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
         if type(dataset) == DaskCudfDataset:
             dataset_data = dataset_data.compute()
 
-        pred = self.task.losses['xgb_gpu'].bw_func(model.inplace_predict(dataset_data))
+        pred = self.task.losses['xgb'].bw_func(model.inplace_predict(dataset_data))
 
         return pred
 
@@ -370,8 +370,8 @@ class BoostXGB_dask(BoostXGB):
 
         params, num_trees, early_stopping_rounds, verbose_eval, fobj, feval = self._infer_params()
 
-        train_target, train_weight = self.task.losses['xgb_gpu'].fw_func(train.target, train.weights)
-        valid_target, valid_weight = self.task.losses['xgb_gpu'].fw_func(valid.target, valid.weights)
+        train_target, train_weight = self.task.losses['xgb'].fw_func(train.target, train.weights)
+        valid_target, valid_weight = self.task.losses['xgb'].fw_func(valid.target, valid.weights)
 
         xgb_train = dxgb.DaskDeviceQuantileDMatrix(self.client, train.data, label=train_target, weight=train_weight)
         xgb_valid = dxgb.DaskDeviceQuantileDMatrix(self.client, valid.data, label=valid_target, weight=valid_weight)
@@ -380,7 +380,7 @@ class BoostXGB_dask(BoostXGB):
                           )
 
         val_pred = dxgb.inplace_predict(self.client, model, valid.data)
-        val_pred = self.task.losses['xgb_gpu'].bw_func(val_pred)
+        val_pred = self.task.losses['xgb'].bw_func(val_pred)
 
         return model, val_pred
 
@@ -395,7 +395,7 @@ class BoostXGB_dask(BoostXGB):
             Predicted target values.
 
         """
-        pred = self.task.losses['xgb_gpu'].bw_func(dxgb.inplace_predict(self.client, model, dataset.data))
+        pred = self.task.losses['xgb'].bw_func(dxgb.inplace_predict(self.client, model, dataset.data))
 
         return pred
 
