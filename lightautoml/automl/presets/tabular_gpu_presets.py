@@ -118,6 +118,8 @@ class TabularAutoML_gpu(TabularAutoML):
         """
         super(TabularAutoML_gpu.__bases__[0], self).__init__(task, timeout, memory_limit, cpu_limit, gpu_ids, timing_params, config_path)
 
+        print("setting gpuids with", gpu_ids)
+
         # upd manual params
         for name, param in zip(
             [
@@ -510,19 +512,15 @@ class TabularAutoML_gpu(TabularAutoML):
         verbose: int = 0,
     ) -> GpuDataset:
         """Fit and get prediction on validation dataset.
-
         Almost same as :meth:`lightautoml.automl.base.AutoML.fit_predict`.
-
         Additional features - working with different data formats.
         Supported now:
-
             - Path to ``.csv``, ``.parquet``, ``.feather`` files.
             - :class:`~numpy.ndarray`, or dict of :class:`~numpy.ndarray`.
               For example, ``{'data': X...}``. In this case,
               roles are optional, but `train_features`
               and `valid_features` required.
             - :class:`pandas.DataFrame`.
-
         Args:
             train_data: Dataset to train.
             roles: Roles dict.
@@ -541,10 +539,8 @@ class TabularAutoML_gpu(TabularAutoML):
                 >=4 : the training process for every algorithm is displayed;
             log_file: Filename for writing logging messages. If log_file is specified,
             the messages will be saved in a the file. If the file exists, it will be overwritten.
-
         Returns:
             Dataset with predictions. Call ``.data`` to get predictions array.
-
         """
         # roles may be none in case of train data is set {'data': np.ndarray, 'target': np.ndarray ...}
         self.set_logfile(log_file)
@@ -571,24 +567,19 @@ class TabularAutoML_gpu(TabularAutoML):
         return_all_predictions: Optional[bool] = None,
     ) -> NumpyDataset:
         """Get dataset with predictions.
-
         Almost same as :meth:`lightautoml.automl.base.AutoML.predict`
         on new dataset, with additional features.
-
         Additional features - working with different data formats.
         Supported now:
-
             - Path to ``.csv``, ``.parquet``, ``.feather`` files.
             - :class:`~numpy.ndarray`, or dict of :class:`~numpy.ndarray`. For example,
               ``{'data': X...}``. In this case roles are optional,
               but `train_features` and `valid_features` required.
             - :class:`pandas.DataFrame`.
-
         Parallel inference - you can pass ``n_jobs`` to speedup
         prediction (requires more RAM).
         Batch_inference - you can pass ``batch_size``
         to decrease RAM usage (may be longer).
-
         Args:
             data: Dataset to perform inference.
             features_names: Optional features names,
@@ -597,10 +588,8 @@ class TabularAutoML_gpu(TabularAutoML):
             n_jobs: Number of jobs.
             return_all_predictions: if True,
               returns all model predictions from last level
-
         Returns:
             Dataset with predictions.
-
         """
 
         if n_jobs != 1:
@@ -647,7 +636,7 @@ class TabularUtilizedAutoML_gpu(TabularUtilizedAutoML):
         timeout: int = 3600,
         memory_limit: int = 16,
         cpu_limit: int = 4,
-        gpu_ids: Optional[str] = None,
+        gpu_ids: Optional[str] = "all",
         timing_params: Optional[dict] = None,
         configs_list: Optional[Sequence[str]] = None,
         drop_last: bool = True,
@@ -690,8 +679,8 @@ class TabularUtilizedAutoML_gpu(TabularUtilizedAutoML):
             ]
         inner_blend = MeanBlender_gpu()
         outer_blend = WeightedBlender_gpu(max_nonzero_coef=outer_blender_max_nonzero_coef)
-        super().__init__(
-            TabularAutoML,
+        super(TabularUtilizedAutoML_gpu.__bases__[0], self).__init__(
+            TabularAutoML_gpu,
             task,
             timeout,
             memory_limit,

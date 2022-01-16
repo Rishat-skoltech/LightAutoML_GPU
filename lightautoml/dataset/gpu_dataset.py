@@ -144,7 +144,7 @@ class CupyDataset(NumpyDataset):
             Stacked features array.
 
         """
-        return cp.hstack(datasets)
+        return cp.hstack([data for data in datasets if len(data) > 0])
 
     def to_numpy(self) -> NumpyDataset:
         """Convert to numpy.

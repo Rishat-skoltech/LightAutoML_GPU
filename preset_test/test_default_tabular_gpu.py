@@ -1,4 +1,5 @@
 from lightautoml.automl.presets.tabular_gpu_presets import TabularAutoML_gpu
+from lightautoml.automl.presets.tabular_gpu_presets import TabularUtilizedAutoML_gpu
 from lightautoml.tasks import Task
 from lightautoml.dataset.roles import TargetRole
 
@@ -317,7 +318,8 @@ if __name__ == "__main__":
 
         # run automl
         # this is for small amounts of data
-        automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="gpu"), timeout=3600)#, client=client)
+        automl = TabularUtilizedAutoML_gpu(task=Task(task_types[cur_file], device="mgpu"), timeout=3600)#, client=client)
+        #automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="gpu"), timeout=3600)#, client=client)
         # this is for bigger amounts of data
         #automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="mgpu"))
 
