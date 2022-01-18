@@ -322,6 +322,8 @@ class BoostCB_gpu(TabularMLAlgo_gpu, ImportanceEstimator):
 
         model.fit(cb_train, eval_set=cb_valid)
 
+        #print("Before predict")
+        #print(type(valid))
         val_pred = self._predict(model, cb_valid, params)
         return model, val_pred
 
@@ -379,19 +381,23 @@ class BoostCB_gpu(TabularMLAlgo_gpu, ImportanceEstimator):
             pred = model.predict(
                 pool,
                 prediction_type='Probability',
-                thread_count=params['thread_count']
+                thread_count=params['thread_count'],
+                #task_type='GPU'
             )
         elif self.task.name == 'binary':
             pred = model.predict(
                 pool,
                 prediction_type='Probability',
-                thread_count=params['thread_count']
+                thread_count=params['thread_count'],
+                #task_type='GPU'
             )[..., 1]
         elif self.task.name == 'reg':
             pred = model.predict(
                 pool,
-                thread_count=params['thread_count']
+                thread_count=params['thread_count'],
+                #task_type='GPU'
             )
+        #print(type(pred))
         pred = self.task.losses['cb'].bw_func(pred)
 
         return pred
