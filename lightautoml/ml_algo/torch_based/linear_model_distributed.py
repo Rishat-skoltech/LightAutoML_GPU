@@ -307,12 +307,13 @@ class TorchBasedLinearEstimator:
             processes = [ctx.Process(target=train_mp,
                                      args=(rank, model, data, y, weights, c, cat_idx, self_loss, opt_params, q, ready))
                          for rank in range(len(self.gpu_ids))]
+            print("Starting processes...")
             for p in processes:
                 p.start()
             res = []
             print("Main process. Waiting for results...")
             while len(res) < len(self.gpu_ids):
-                res.append(q.get().clone().to(f'cuda:0'))
+                res.append(q.get().copy().to(f'cuda:0'))
             ready.set()
             ctx.join()
             new_state_dict = OrderedDict()
