@@ -138,5 +138,6 @@ def train_model(rank, model, data, y, weights, c, cat_idx, self_loss, opt_params
         return loss + .5 * penalty / c
 
     model = _optimize(model, data, data_cat, y, weights, c, parameters=opt_params)
+    print(f"Rank is {rank}. Putting model to queue")
     queue.put(model.state_dict())
     ready.wait()

@@ -310,6 +310,7 @@ class TorchBasedLinearEstimator:
             for p in processes:
                 p.start()
             res = []
+            print("Main process. Waiting for results...")
             while len(res) < len(self.gpu_ids):
                 res.append(q.get().to(f'cuda:0'))
             ready.set()
