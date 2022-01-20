@@ -312,10 +312,11 @@ if __name__ == "__main__":
         # this is for small amounts of data
         with torch.autograd.profiler.emit_nvtx():
 
-            automl = TabularUtilizedAutoML_gpu(task=Task(task_types[cur_file], device="mgpu"), timeout=3600)  # , client=client)
+        #automl = TabularUtilizedAutoML_gpu(task=Task(task_types[cur_file], device="mgpu"), timeout=3600)  # , client=client)
         # automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="gpu"), timeout=3600)#, client=client)
         # this is for bigger amounts of data
-        # automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="mgpu"))
+            automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="mgpu"),
+                                       general_params={'parallel_folds': False})
 
             oof_predictions = automl.fit_predict(data, roles={'target': TARGETS_DICT[cur_file]}, verbose=2)
 
