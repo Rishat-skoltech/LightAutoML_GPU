@@ -18,7 +18,7 @@ import cudf
 
 from joblib import Parallel, delayed
 
-import os
+import torch.multiprocessing as mp
 
 from cupyx.scipy import sparse as sparse_gpu
 import torch
@@ -29,6 +29,7 @@ from torch import optim
 from ...tasks.losses import TorchLossWrapper
 
 from .linear_model_cupy import CatLinear, CatLogisticRegression, CatRegression, CatMulticlass
+from distributed_training import train_model as train_mp
 
 logger = logging.getLogger(__name__)
 ArrayOrSparseMatrix = Union[cp.ndarray, sparse_gpu.spmatrix]
@@ -294,10 +295,26 @@ class TorchBasedLinearEstimator:
         best_score = -np.inf
 
         for c in self.cs:
-            with Parallel(n_jobs=len(self.gpu_ids), prefer='threads') as p:
-                res = p(delayed(train_iteration)
-                (data, y, weights, int(device_id), c)
-                for device_id in self.gpu_ids)
+
+            model = self.model
+            cat_idx = self.categorical_idx
+            self_loss = self.loss
+            opt_params = {"max_iter": self.max_iter,
+                          "tol": self.tol}
+            ctx = mp.get_context('spawn')
+            q = ctx.Queue()
+            ready = mp.Event()
+            processes = [ctx.Process(target=train_mp,
+                                     args=(rank, model, data, y, weights, c, cat_idx, self_loss, opt_params, q, ready))
+                         for rank in range(len(self.gpu_ids))]
+            for p in processes:
+                p.start()
+            res = []
+            while len(res) < len(self.gpu_ids):
+                res.append(q.get().to(f'cuda:0'))
+            ready.set()
+            for p in processes:
+                p.join()
             new_state_dict = OrderedDict()
             for i, it in enumerate(res):
                 if i == 0:
