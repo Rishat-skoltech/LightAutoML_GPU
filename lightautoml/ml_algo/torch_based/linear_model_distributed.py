@@ -29,7 +29,7 @@ from torch import optim
 from ...tasks.losses import TorchLossWrapper
 
 from .linear_model_cupy import CatLinear, CatLogisticRegression, CatRegression, CatMulticlass
-from distributed_training import train_model as train_mp
+from .distributed_training import train_model as train_mp
 
 logger = logging.getLogger(__name__)
 ArrayOrSparseMatrix = Union[cp.ndarray, sparse_gpu.spmatrix]
