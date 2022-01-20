@@ -311,14 +311,14 @@ if __name__ == "__main__":
         # run automl
         # this is for small amounts of data
         with torch.autograd.profiler.emit_nvtx():
-            torch.cuda.cudart().cudaProfilerStart()
+
             automl = TabularUtilizedAutoML_gpu(task=Task(task_types[cur_file], device="mgpu"), timeout=3600)  # , client=client)
         # automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="gpu"), timeout=3600)#, client=client)
         # this is for bigger amounts of data
         # automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="mgpu"))
 
             oof_predictions = automl.fit_predict(data, roles={'target': TARGETS_DICT[cur_file]}, verbose=2)
-            torch.cuda.cudart().cudaProfilerStop()
+
         print("NOW DOING PREDICTIONS")
 
         te_pred = automl.predict(data)

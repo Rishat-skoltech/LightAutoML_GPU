@@ -292,7 +292,7 @@ class TorchBasedLinearEstimator:
 
         es = 0
         best_score = -np.inf
-
+        torch.cuda.cudart().cudaProfilerStart()
         for c in self.cs:
             with Parallel(n_jobs=len(self.gpu_ids), prefer='threads') as p:
                 res = p(delayed(train_iteration)
@@ -331,7 +331,7 @@ class TorchBasedLinearEstimator:
                 break
 
         self.model.to('cuda').load_state_dict(best_model_params)
-
+        torch.cuda.cudart().cudaProfilerStop()
         return self
 
     def predict(self, data):
