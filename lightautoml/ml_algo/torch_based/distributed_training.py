@@ -139,5 +139,5 @@ def train_model(rank, model, data, y, weights, c, cat_idx, self_loss, opt_params
 
     model = _optimize(model, data, data_cat, y, weights, c, parameters=opt_params)
     print(f"Rank is {rank}. Putting model to queue", flush=True)
-    queue.put(model.state_dict())
+    queue.put(model.to(f'cuda:0').state_dict())
     ready.wait()
