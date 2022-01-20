@@ -18,7 +18,7 @@ import cudf
 
 from joblib import Parallel, delayed
 
-import torch.multiprocessing as mp
+import os
 
 from cupyx.scipy import sparse as sparse_gpu
 import torch
@@ -29,7 +29,6 @@ from torch import optim
 from ...tasks.losses import TorchLossWrapper
 
 from .linear_model_cupy import CatLinear, CatLogisticRegression, CatRegression, CatMulticlass
-from .distributed_training import train_model as train_mp
 
 logger = logging.getLogger(__name__)
 ArrayOrSparseMatrix = Union[cp.ndarray, sparse_gpu.spmatrix]
@@ -76,41 +75,40 @@ class TorchBasedLinearEstimator:
             data = cp.copy(data)
         else:
             data = data.compute()
-            
-        size_base = data.shape[0]//size
-        residue = int(data.shape[0]%size)
-        offset = size_base*ind + min(ind, residue)
+
+        size_base = data.shape[0] // size
+        residue = int(data.shape[0] % size)
+        offset = size_base * ind + min(ind, residue)
 
         if type(data) == cp.ndarray:
-            data = data[offset:offset+size_base + int(residue>ind), :]
+            data = data[offset:offset + size_base + int(residue > ind), :]
         else:
-            data = data.iloc[offset:offset+size_base + int(residue>ind)]
-
+            data = data.iloc[offset:offset + size_base + int(residue > ind)]
 
         if y is not None:
             if type(y) != cp.ndarray:
-                y = cp.copy(y.compute().values[offset:offset+size_base + int(residue>ind)])
+                y = cp.copy(y.compute().values[offset:offset + size_base + int(residue > ind)])
             else:
-                y = cp.copy(y[offset:offset+size_base + int(residue>ind)])
+                y = cp.copy(y[offset:offset + size_base + int(residue > ind)])
             y = torch.as_tensor(y.astype(cp.float32), device=device_id)
         if weights is not None:
 
             if type(weights) != cp.ndarray:
-                weigths = cp.copy(weights.compute().values[offset:offset+size_base+int(residue>ind)])
+                weigths = cp.copy(weights.compute().values[offset:offset + size_base + int(residue > ind)])
             else:
-                weights = cp.copy(weights[offset:offset+size_base + int(residue>ind)])
+                weights = cp.copy(weights[offset:offset + size_base + int(residue > ind)])
 
             weights = torch.as_tensor(weights.astype(cp.float32), device=device_id)
 
         if 0 < len(self.categorical_idx) < data.shape[1]:
             # noinspection PyTypeChecker
             data_cat = torch.as_tensor(
-                data[self.categorical_idx].values.astype(cp.int32), 
+                data[self.categorical_idx].values.astype(cp.int32),
                 device=device_id
             )
             data_ = torch.as_tensor(
-                data[data.columns.difference(self.categorical_idx)]\
-                 .values.astype(cp.float32),
+                data[data.columns.difference(self.categorical_idx)] \
+                    .values.astype(cp.float32),
                 device=device_id
             )
             return data_, data_cat, y, weights
@@ -124,35 +122,35 @@ class TorchBasedLinearEstimator:
             return None, data_cat
 
     def __init__(
-        self,
-        data_size: int,
-        categorical_idx: Sequence[int] = (),
-        embed_sizes: Sequence[int] = (),
-        output_size: int = 1,
-        cs: Sequence[float] =(
-            .00001,
-            .00005,
-            .0001,
-            .0005,
-            .001,
-            .005,
-            .01,
-            .05,
-            .1,
-            .5,
-            1.,
-            2.,
-            5.,
-            7.,
-            10.,
-            20.
-        ),
-        max_iter: int = 1000,
-        tol: float = 1e-5,
-        early_stopping: int = 2,
-        loss=Optional[Callable],
-        metric=Optional[Callable],
-        gpu_ids=None
+            self,
+            data_size: int,
+            categorical_idx: Sequence[int] = (),
+            embed_sizes: Sequence[int] = (),
+            output_size: int = 1,
+            cs: Sequence[float] = (
+                    .00001,
+                    .00005,
+                    .0001,
+                    .0005,
+                    .001,
+                    .005,
+                    .01,
+                    .05,
+                    .1,
+                    .5,
+                    1.,
+                    2.,
+                    5.,
+                    7.,
+                    10.,
+                    20.
+            ),
+            max_iter: int = 1000,
+            tol: float = 1e-5,
+            early_stopping: int = 2,
+            loss=Optional[Callable],
+            metric=Optional[Callable],
+            gpu_ids=None
     ):
         """
         Args:
@@ -184,7 +182,7 @@ class TorchBasedLinearEstimator:
         self.metric = metric  # metric(y_true, y_preds, sample_weight = None) -> float (greater_is_better)
         self.gpu_ids = gpu_ids
 
-    def _prepare_data(self, data: ArrayOrSparseMatrix, y = None, weights = None, rank: int = None):
+    def _prepare_data(self, data: ArrayOrSparseMatrix, y=None, weights=None, rank: int = None):
         """Prepare data based on input type.
 
         Args:
@@ -197,7 +195,7 @@ class TorchBasedLinearEstimator:
         if sparse_gpu.issparse(data):
             raise NotImplementedError("sparse data on multi GPU is not yet supported")
 
-        return self._prepare_data_dense(data, y, weights,  rank)
+        return self._prepare_data_dense(data, y, weights, rank)
 
     def _optimize(self, model, data: torch.Tensor,
                   data_cat: Optional[torch.Tensor], y: torch.Tensor = None,
@@ -223,6 +221,7 @@ class TorchBasedLinearEstimator:
         )
         # keep history
         results = []
+
         def closure():
             opt.zero_grad()
             output = model(data, data_cat)
@@ -231,15 +230,16 @@ class TorchBasedLinearEstimator:
                 loss.backward()
             results.append(loss.item())
             return loss
+
         opt.step(closure)
 
     def _loss_fn(
-        self,
-        model,
-        y_true: torch.Tensor,
-        y_pred: torch.Tensor,
-        weights: Optional[torch.Tensor],
-        c: float
+            self,
+            model,
+            y_true: torch.Tensor,
+            y_pred: torch.Tensor,
+            weights: Optional[torch.Tensor],
+            c: float
     ) -> torch.Tensor:
         """Weighted loss_fn wrapper.
 
@@ -267,24 +267,24 @@ class TorchBasedLinearEstimator:
         return loss + .5 * penalty / c
 
     def fit(self, data: dask_cudf.DataFrame,
-                    y: dask_cudf.DataFrame,
-                    weights: Optional[cp.ndarray] = None,
-                    data_val: Optional[dask_cudf.DataFrame] = None,
-                    y_val: Optional[dask_cudf.DataFrame] = None,
-                    weights_val: Optional[cp.ndarray] = None,
-                    dev_id = None):
+            y: dask_cudf.DataFrame,
+            weights: Optional[cp.ndarray] = None,
+            data_val: Optional[dask_cudf.DataFrame] = None,
+            y_val: Optional[dask_cudf.DataFrame] = None,
+            weights_val: Optional[cp.ndarray] = None,
+            dev_id=None):
 
         assert self.model is not None, 'Model should be defined'
 
         def train_iteration(data, y, weights, rank, c):
-            model = deepcopy(self.model)#.to(rank)
+            model = deepcopy(self.model)  # .to(rank)
             model.to(rank)
             data, data_cat, y, weights = self._prepare_data(data, y, weights, rank)
             self._optimize(model, data, data_cat, y, weights, c)
             return model.state_dict()
 
         def score_iteration(data_val, y_val, weights_val, rank):
-            model = deepcopy(self.model)#.to(rank)
+            model = deepcopy(self.model)  # .to(rank)
             model.to(rank)
             data_val, data_val_cat, y_val, weights_val = self._prepare_data(data_val, y_val, weights_val, rank)
             val_pred = self._score(model, data_val, data_val_cat)
@@ -293,29 +293,11 @@ class TorchBasedLinearEstimator:
 
         es = 0
         best_score = -np.inf
-
         for c in self.cs:
-
-            model = self.model
-            cat_idx = self.categorical_idx
-            self_loss = self.loss
-            opt_params = {"max_iter": self.max_iter,
-                          "tol": self.tol}
-            ctx = mp.get_context('spawn')
-            q = ctx.Queue()
-            ready = ctx.Event()
-            processes = [ctx.Process(target=train_mp,
-                                     args=(rank, model, data, y, weights, c, cat_idx, self_loss, opt_params, q, ready))
-                         for rank in range(len(self.gpu_ids))]
-            print("Starting processes...")
-            for p in processes:
-                p.start()
-            res = []
-            print("Main process. Waiting for results...")
-            while len(res) < len(self.gpu_ids):
-                res.append(q.get().copy())
-            ready.set()
-            ctx.join()
+            with Parallel(n_jobs=len(self.gpu_ids), prefer='threads') as p:
+                res = p(delayed(train_iteration)
+                        (data, y, weights, int(device_id), c)
+                        for device_id in self.gpu_ids)
             new_state_dict = OrderedDict()
             for i, it in enumerate(res):
                 if i == 0:
@@ -331,8 +313,8 @@ class TorchBasedLinearEstimator:
 
             with Parallel(n_jobs=len(self.gpu_ids), prefer='threads') as p:
                 res = p(delayed(score_iteration)
-                (data_val, y_val, weights_val, int(device_id))
-                for device_id in self.gpu_ids)
+                        (data_val, y_val, weights_val, int(device_id))
+                        for device_id in self.gpu_ids)
 
             score = 0.0
             for it in res:
@@ -349,7 +331,6 @@ class TorchBasedLinearEstimator:
                 break
 
         self.model.to('cuda').load_state_dict(best_model_params)
-
         return self
 
     def predict(self, data):
@@ -362,35 +343,35 @@ class TorchBasedLogisticRegression(TorchBasedLinearEstimator):
     """Linear binary classifier (distributed GPU version)."""
 
     def __init__(
-        self,
-        data_size: int,
-        categorical_idx: Sequence[int] = (),
-        embed_sizes: Sequence[int] = (),
-        output_size: int = 1,
-        cs: Sequence[float] = (
-            .00001,
-            .00005,
-            .0001,
-            .0005,
-            .001,
-            .005,
-            .01,
-            .05,
-            .1,
-            .5,
-            1.,
-            2.,
-            5.,
-            7.,
-            10.,
-            20.
-        ),
-        max_iter: int = 1000,
-        tol: float = 1e-4,
-        early_stopping: int = 2,
-        loss=Optional[Callable],
-        metric=Optional[Callable],
-        gpu_ids = None
+            self,
+            data_size: int,
+            categorical_idx: Sequence[int] = (),
+            embed_sizes: Sequence[int] = (),
+            output_size: int = 1,
+            cs: Sequence[float] = (
+                    .00001,
+                    .00005,
+                    .0001,
+                    .0005,
+                    .001,
+                    .005,
+                    .01,
+                    .05,
+                    .1,
+                    .5,
+                    1.,
+                    2.,
+                    5.,
+                    7.,
+                    10.,
+                    20.
+            ),
+            max_iter: int = 1000,
+            tol: float = 1e-4,
+            early_stopping: int = 2,
+            loss=Optional[Callable],
+            metric=Optional[Callable],
+            gpu_ids=None
     ):
         """
         Args:
@@ -417,10 +398,11 @@ class TorchBasedLogisticRegression(TorchBasedLinearEstimator):
 
         if loss is None:
             loss = TorchLossWrapper(_loss)
-        super().__init__(data_size, categorical_idx, embed_sizes, output_size, cs, max_iter, tol, early_stopping, loss, metric, gpu_ids)
+        super().__init__(data_size, categorical_idx, embed_sizes, output_size, cs, max_iter, tol, early_stopping, loss, metric,
+                         gpu_ids)
         self.model = _model(self.data_size - len(self.categorical_idx), self.embed_sizes, self.output_size).cuda()
 
-    def predict(self, data: cp.ndarray, dev_id = None) -> cp.ndarray:
+    def predict(self, data: cp.ndarray, dev_id=None) -> cp.ndarray:
         """Inference phase.
 
         Args:
@@ -431,7 +413,7 @@ class TorchBasedLogisticRegression(TorchBasedLinearEstimator):
 
         """
         pred = super().predict(data)
-        #if self._binary:
+        # if self._binary:
         #    pred = pred[:, 0]
         return pred
 
@@ -440,35 +422,35 @@ class TorchBasedLinearRegression(TorchBasedLinearEstimator):
     """Torch-based linear regressor optimized by L-BFGS (distributed GPU version)."""
 
     def __init__(
-        self,
-        data_size: int,
-        categorical_idx: Sequence[int] = (),
-        embed_sizes: Sequence[int] = (),
-        output_size: int = 1,
-        cs: Sequence[float] = (
-            .00001,
-            .00005,
-            .0001,
-            .0005,
-            .001,
-            .005,
-            .01,
-            .05,
-            .1,
-            .5,
-            1.,
-            2.,
-            5.,
-            7.,
-            10.,
-            20.
-        ),
-        max_iter: int = 1000,
-        tol: float = 1e-4,
-        early_stopping: int = 2,
-        loss=Optional[Callable],
-        metric=Optional[Callable],
-        gpu_ids = None
+            self,
+            data_size: int,
+            categorical_idx: Sequence[int] = (),
+            embed_sizes: Sequence[int] = (),
+            output_size: int = 1,
+            cs: Sequence[float] = (
+                    .00001,
+                    .00005,
+                    .0001,
+                    .0005,
+                    .001,
+                    .005,
+                    .01,
+                    .05,
+                    .1,
+                    .5,
+                    1.,
+                    2.,
+                    5.,
+                    7.,
+                    10.,
+                    20.
+            ),
+            max_iter: int = 1000,
+            tol: float = 1e-4,
+            early_stopping: int = 2,
+            loss=Optional[Callable],
+            metric=Optional[Callable],
+            gpu_ids=None
     ):
         """
         Args:
@@ -495,17 +477,17 @@ class TorchBasedLinearRegression(TorchBasedLinearEstimator):
             max_iter,
             tol,
             early_stopping,
-            loss, 
+            loss,
             metric,
             gpu_ids
         )
         self.model = CatRegression(
             self.data_size - len(self.categorical_idx),
-            self.embed_sizes, 
+            self.embed_sizes,
             self.output_size
         ).cuda()
 
-    def predict(self, data: cp.ndarray, dev_id = None) -> cp.ndarray:
+    def predict(self, data: cp.ndarray, dev_id=None) -> cp.ndarray:
         """Inference phase.
 
         Args:
