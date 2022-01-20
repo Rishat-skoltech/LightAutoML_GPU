@@ -294,7 +294,7 @@ class TorchBasedLinearEstimator:
         es = 0
         best_score = -np.inf
         for c in self.cs:
-            with Parallel(n_jobs=len(self.gpu_ids), prefer='threads') as p:
+            with Parallel(n_jobs=len(self.gpu_ids), backend='loky') as p:
                 res = p(delayed(train_iteration)
                         (data, y, weights, int(device_id), c)
                         for device_id in self.gpu_ids)
