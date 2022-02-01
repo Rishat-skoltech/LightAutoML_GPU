@@ -634,15 +634,18 @@ class ReportDeco:
         """
         # TODO: parameters parsing in general case
 
-        preds = self._model.fit_predict(*args, **kwargs)
+        preds = cp.asnumpy(self._model.fit_predict(*args, **kwargs))
         train_data = kwargs["train_data"] if "train_data" in kwargs else args[0]
         input_roles = kwargs["roles"] if "roles" in kwargs else args[1]
         self._target = input_roles["target"]
         valid_data = kwargs.get("valid_data", None)
         if valid_data is None:
-            data = self._collect_data(preds, train_data)
+            data = self._collect_data(preds, cp.asnumpy(train_data))
         else:
-            data = self._collect_data(preds, valid_data)
+            data = self._collect_data(preds, cp.asnumpy(valid_data))
+        train_data = cp.asnumpy(train_data)
+        if valid_data is not None:
+            valid_data = cp.asnumpy(valid_data)
         self._inference_content = {}
         if self.task == "binary":
             # filling for html
@@ -728,9 +731,9 @@ class ReportDeco:
         """
         self._n_test_sample += 1
         # get predictions
-        test_preds = self._model.predict(*args, **kwargs)
+        test_preds = cp.asnumpy(self._model.predict(*args, **kwargs))
 
-        test_data = kwargs["test"] if "test" in kwargs else args[0]
+        test_data = cp.asnumpy(kwargs["test"]) if "test" in kwargs else cp.asnumpy(args[0])
         data = self._collect_data(test_preds, test_data)
 
         if self.task == "binary":
