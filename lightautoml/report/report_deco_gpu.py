@@ -8,6 +8,7 @@ from copy import copy
 from copy import deepcopy
 
 import matplotlib.pyplot as plt
+import cupy as cp
 import numpy as np
 import pandas as pd
 import seaborn as sns
