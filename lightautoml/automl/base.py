@@ -288,13 +288,14 @@ class AutoML:
             Dataset with predictions.
 
         """
-
+        print("PREDICTING VALUES (automl.base class)")
         dataset = self.reader.read(data, features_names=features_names, add_array_attrs=False)
         for n, level in enumerate(self.levels, 1):
             # check if last level
 
             level_predictions = []
             for _n, ml_pipe in enumerate(level):
+                print("PIPE algo:" ml_pipe)
                 level_predictions.append(ml_pipe.predict(dataset))
 
             if n != len(self.levels):
