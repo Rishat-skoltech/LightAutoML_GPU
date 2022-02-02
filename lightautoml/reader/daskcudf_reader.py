@@ -307,7 +307,7 @@ class DaskCudfReader(CudfReader):
 
         elif isinstance(data, (dd.DataFrame, dd.Series)):
             data = data.map_partitions(cudf.DataFrame.from_pandas, nan_as_null=False,
-                           meta=cudf.DataFrame(columns=train_data.columns)).persist()
+                           meta=cudf.DataFrame(columns=data.columns)).persist()
 
         else:
             raise NotImplementedError("Input data type is not supported")
