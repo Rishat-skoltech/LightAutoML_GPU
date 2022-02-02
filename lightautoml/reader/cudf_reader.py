@@ -371,6 +371,27 @@ class CudfReader(PandasToPandasReader):
 
         return dataset
 
+    def to_cpu(self):
+        task_cpu = deepcopy(self.task)
+        task_cpu.device = 'cpu'
+        cpu_reader = PandasToPandasReader(
+            task=task_cpu,
+            samples=self.samples,
+            max_nan_rate=self.max_nan_rate,
+            max_constant_rate=self.max_constant_rate,
+            cv=self.cv,
+            random_state=self.random_state,
+            roles_params=self.roles_params,
+            n_jobs=self.n_jobs,
+            **kwargs)
+        cpu_reader.class_mapping = self.class_mapping
+        cpu_reader._dropped_features = self.dropped_features
+        cpu_reader._used_features = self.used_features
+        cpu_reader._used_array_attrs = self.used_array_attrs
+        cpu_reader._roles = self.roles
+        return cpu_reader
+
+
     def advanced_roles_guess(self, dataset: CudfDataset,
                          manual_roles: Optional[RolesDict] = None) -> RolesDict:
         """Advanced roles guess over user's definition and reader's simple guessing.
