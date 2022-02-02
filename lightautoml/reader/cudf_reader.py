@@ -371,7 +371,7 @@ class CudfReader(PandasToPandasReader):
 
         return dataset
 
-    def to_cpu(self):
+    def to_cpu(self, **kwargs):
         task_cpu = deepcopy(self.task)
         task_cpu.device = 'cpu'
         cpu_reader = PandasToPandasReader(

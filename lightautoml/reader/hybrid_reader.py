@@ -217,6 +217,8 @@ class HybridReader(CudfReader):
         return self.final_reader.read(data, features_names, add_array_attrs)
 
     def to_cpu(self):
+        print("TO_CPU called!")
+        print(type(self.final_reader))
         if isinstance(self.final_reader, PandasToPandasReader):
             return self.final_reader
         elif isinstance(self.final_reader, CudfReader):
