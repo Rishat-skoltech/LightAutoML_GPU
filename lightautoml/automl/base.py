@@ -295,7 +295,7 @@ class AutoML:
 
             level_predictions = []
             for _n, ml_pipe in enumerate(level):
-                print("PIPE algo:" ml_pipe)
+                print("PIPE algo:", ml_pipe)
                 level_predictions.append(ml_pipe.predict(dataset))
 
             if n != len(self.levels):
