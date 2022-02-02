@@ -220,14 +220,17 @@ class HybridReader(CudfReader):
         print("TO_CPU called!")
         print(type(self.final_reader))
         if isinstance(self.final_reader, PandasToPandasReader):
+            print('branch 1')
             return self.final_reader
         elif isinstance(self.final_reader, CudfReader):
+            print('branch 2')
             print("Returning pandas reader from cudf reader...")
             return self.final_reader.to_cpu()
         elif isinstance(self.final_reader, DaskCudfReader):
+            print('branch 3')
             # TODO: create DaskCudfReader CPU inference
             raise NotImplementedError('DaskCudfReader CPU inference is not supported yet!')
         else:
-            print("last if-branch")
+            print("branch 4")
             return self.final_reader.to_cpu()
 
