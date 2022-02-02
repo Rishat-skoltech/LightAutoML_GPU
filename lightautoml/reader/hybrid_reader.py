@@ -227,4 +227,6 @@ class HybridReader(CudfReader):
         elif isinstance(self.final_reader, DaskCudfReader):
             # TODO: create DaskCudfReader CPU inference
             raise NotImplementedError('DaskCudfReader CPU inference is not supported yet!')
+        else:
+            return self.final_reader.to_cpu()
 
