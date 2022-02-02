@@ -220,6 +220,7 @@ class HybridReader(CudfReader):
         if isinstance(self.final_reader, PandasToPandasReader):
             return self.final_reader
         elif isinstance(self.final_reader, CudfReader):
+            print("Returning pandas reader from cudf reader...")
             return self.final_reader.to_cpu()
         elif isinstance(self.final_reader, DaskCudfReader):
             # TODO: create DaskCudfReader CPU inference
