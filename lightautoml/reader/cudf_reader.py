@@ -384,7 +384,6 @@ class CudfReader(PandasToPandasReader):
             roles_params=self.roles_params,
             n_jobs=self.n_jobs,
             **kwargs)
-        print(type(cpu_reader))
         cpu_reader.class_mapping = self.class_mapping
         cpu_reader._dropped_features = self.dropped_features
         cpu_reader._used_features = self.used_features

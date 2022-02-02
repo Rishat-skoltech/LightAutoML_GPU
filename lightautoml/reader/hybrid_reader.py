@@ -217,12 +217,12 @@ class HybridReader(CudfReader):
         return self.final_reader.read(data, features_names, add_array_attrs)
 
     def to_cpu(self):
+        # TODO:remove prints
         print("TO_CPU called!")
         print(type(self.final_reader))
         if isinstance(self.final_reader, DaskCudfReader):
             print('branch 1')
-            # TODO: create DaskCudfReader CPU inference
-            raise NotImplementedError('DaskCudfReader CPU inference is not supported yet!')
+            return self.final_reader.to_cpu()
         elif isinstance(self.final_reader, CudfReader):
             print('branch 2')
             print("Returning pandas reader from cudf reader...")
