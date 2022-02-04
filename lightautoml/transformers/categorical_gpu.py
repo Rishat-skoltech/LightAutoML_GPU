@@ -1,4 +1,5 @@
 """Categorical features transformers."""
+from copy import deepcopy
 
 from itertools import combinations
 from typing import List
@@ -29,6 +30,11 @@ from .categorical import oof_task_check
 from .categorical import multiclass_task_check
 from .categorical import encoding_check
 
+from .categorical import LabelEncoder
+
+from .categorical import LabelEncoder, OHEEncoder, FreqEncoder, TargetEncoder, MultiClassTargetEncoder,\
+    CatIntersectstions
+
 GpuNumericalDataset = Union[CupyDataset, CudfDataset, DaskCudfDataset]
 
 
@@ -55,6 +61,20 @@ class LabelEncoder_gpu(LAMLTransformer):
         self.subs = subs
         self.random_state = random_state
         self._output_role = CategoryRole(cp.int32, label_encoded=True)
+
+    def to_cpu(self):
+        subs = deepcopy(self.subs)
+        random_state = self.random_state
+        features = deepcopy(self._features)
+        internal_dict = {i:v for i,v in
+                         zip(self.dicts.keys(), deepcopy(self.dicts.values().to_pandas()))}
+        self.__class__ = LabelEncoder
+        self.subs = subs
+        self.random_state = random_state
+        self.dicts = internal_dict
+        self._output_role = CategoryRole(np.int32, label_encoded=True)
+        self.features = features
+        return self
 
     def _get_df(self, dataset: GpuNumericalDataset) -> cudf.DataFrame:
         """Get df and sample (GPU version).
@@ -246,6 +266,13 @@ class OHEEncoder_gpu(LAMLTransformer):
             assert self.total_feats_cnt is not None,\
                    'Param total_feats_cnt should be defined if make_sparse is None'
 
+    def to_cpu(self):
+        make_sparse = self.make_sparse
+        total_feats_cnt = self.total_feats_cnt
+        dtype = self.dtype
+        # TODO: implement this method
+        raise NotImplementedError("This method is not implemented yet.")
+
     def _fit_cupy(self, dataset: GpuNumericalDataset):
 
         # convert to accepted dtype and get attributes
@@ -400,6 +427,20 @@ class FreqEncoder_gpu(LabelEncoder_gpu):
         super().__init__(*args, **kwargs)
         self._output_role = NumericRole(cp.float32)
 
+    def to_cpu(self):
+        subs = deepcopy(self.subs)
+        random_state = self.random_state
+        features = deepcopy(self._features)
+        internal_dict = {i: v for i, v in
+                         zip(self.dicts.keys(), deepcopy(self.dicts.values().to_pandas()))}
+        self.__class__ = FreqEncoder
+        self.subs = subs
+        self.random_state = random_state
+        self.dicts = internal_dict
+        self._output_role = CategoryRole(np.int32, label_encoded=True)
+        self.features = features
+        return self
+
     def _fit_cupy(self, dataset: GpuNumericalDataset):
 
         # set transformer names and add checks
@@ -432,6 +473,7 @@ class FreqEncoder_gpu(LabelEncoder_gpu):
             self.dicts[i] = cnts[cnts > 1].compute()
 
         return self
+
 
 class TargetEncoder_gpu(LAMLTransformer):
     """
@@ -590,6 +632,16 @@ class TargetEncoder_gpu(LAMLTransformer):
         idx = scores.argmin()
 
         return idx
+
+    def to_cpu(self):
+        output_role = deepcopy(self.output_role)
+        features = deepcopy(self.features)
+        encodings = deepcopy([cp.asnumpy(enc) for enc in self.encodings])
+        self.__class__ = TargetEncoder
+        self.output_role = output_role
+        self.features = features
+        self.encodings = encodings
+        return self
 
     def fit(self, dataset: GpuNumericalDataset):
 
@@ -912,6 +964,16 @@ class MultiClassTargetEncoder_gpu(LAMLTransformer):
         prior = cast(cp.ndarray, cp.arange(n_classes)[:, cp.newaxis] == target).mean(axis=1)
         return cudf.DataFrame([prior])
 
+    def to_cpu(self):
+        n_classes = self.n_classes
+        encodings = deepcopy([cp.asnumpy(enc) for enc in self.encodings])
+        features = deepcopy(self._features)
+        self.__class__ = MultiClassTargetEncoder
+        self.n_classes = n_classes
+        self.encodings = encodings
+        self.features = features
+        return self
+
     def fit_transform(self, dataset: GpuNumericalDataset) -> GpuNumericalDataset:
         """Estimate label frequencies and create encoding dicts (GPU version).
 
@@ -1209,6 +1271,24 @@ class CatIntersections_gpu(LabelEncoder_gpu):
         self.intersections = intersections
         self.max_depth = max_depth
 
+    def to_cpu(self):
+        intersections = deepcopy(self.intersections)
+        max_depth = self.max_depth
+        subs = deepcopy(self.subs)
+        random_state = self.random_state
+        features = deepcopy(self._features)
+        internal_dict = {i: v for i, v in
+                         zip(self.dicts.keys(), deepcopy(self.dicts.values().to_pandas()))}
+
+        self.__class__ = CatIntersectstions
+        self.intersections = intersections
+        self.max_depth = max_depth
+        self.subs = subs
+        self.random_state = random_state
+        self.features = features
+        self.dicts = internal_dict
+        return self
+
     @staticmethod
     def _make_category(df: cudf.DataFrame, cols: Sequence[str]) -> cudf.DataFrame:
         """Make hash for category interactions.
@@ -1330,6 +1410,20 @@ class OrdinalEncoder_gpu(LabelEncoder_gpu):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._output_role = NumericRole(cp.float32)
+
+    def to_cpu(self):
+        subs = deepcopy(self.subs)
+        random_state = self.random_state
+        features = deepcopy(self._features)
+        internal_dict = {i:v for i,v in
+                         zip(self.dicts.keys(), deepcopy(self.dicts.values().to_pandas()))}
+        self.__class__ = OrdinalEncoder_gpu
+        self.subs = subs
+        self.random_state = random_state
+        self.dicts = internal_dict
+        self._output_role = CategoryRole(np.int32, label_encoded=True)
+        self.features = features
+        return self
 
     def _fit_cupy(self, dataset: GpuNumericalDataset):
 

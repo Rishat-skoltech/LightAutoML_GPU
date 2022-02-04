@@ -1,6 +1,7 @@
 """Datetime features transformers."""
 
 from collections import OrderedDict
+from copy import deepcopy
 from typing import List
 from typing import Optional
 from typing import Sequence
@@ -20,6 +21,7 @@ from ..dataset.roles import CategoryRole
 from ..dataset.roles import ColumnRole
 from ..dataset.roles import NumericRole
 from .base import LAMLTransformer
+from .datetime import TimeToNum, BaseDiff, DateSeasons
 
 from .datetime import date_attrs, datetime_check
 
@@ -50,6 +52,14 @@ class TimeToNum_gpu(LAMLTransformer):
     ) -> cudf.DataFrame:
         output = (data.astype(int) - mean) / std
         return output
+
+    def to_cpu(self):
+        basic_interval = self.basic_interval
+        basic_time = self.basic_time
+        self.__class__ = TimeToNum
+        self.basic_time = basic_time
+        self.basic_interval = basic_interval
+        return self
 
     def _transform_cupy(self, dataset: DatetimeCompatible_gpu) -> CupyDataset:
         """Transform dates to numeric differences with base date (GPU version).
@@ -149,6 +159,16 @@ class BaseDiff_gpu(LAMLTransformer):
         self.base_names = base_names
         self.diff_names = diff_names
         self.basic_interval = basic_interval
+
+    def to_cpu(self):
+        base_names = self.base_names
+        diff_names = self.diff_names
+        basic_interval = self.basic_interval
+        self.__class__ = BaseDiff
+        self.base_names = base_names
+        self.diff_names = diff_names
+        self.basic_interval = basic_interval
+        return self
 
     def fit(self, dataset: LAMLDataset) -> 'LAMLTransformerGPU':
         """Fit transformer and return it's instance (GPU version).
@@ -264,6 +284,18 @@ class DateSeasons_gpu(LAMLTransformer):
         self.output_role = output_role
         if output_role is None:
             self.output_role = CategoryRole(cp.int32)
+
+    def to_cpu(self):
+        output_role = deepcopy(self.output_role)
+        transformations = deepcopy(self.transformations)
+        features = deepcopy(self._features)
+        output_role = deepcopy(self.output_role)
+        self.__class__ = DateSeasons
+        self.output_role = output_role
+        self.transformations = transformations
+        self.features = features
+        self.output_role = output_role
+        return self
 
     def fit(self, dataset: LAMLDataset) -> 'LAMLTransformerGPU':
         """Fit transformer and return it's instance (GPU version).
