@@ -45,6 +45,7 @@ def extract_params(input_struct):
     params = dict()
     iterator = input_struct if isinstance(input_struct, dict) else input_struct.__dict__
     for key in iterator:
+        print("KEY:", key)
         if key.startswith(("_", "autonlp_params")):
             continue
         value = iterator[key]
@@ -53,6 +54,7 @@ def extract_params(input_struct):
         elif value is None:
             params[key] = None
         elif hasattr(value, "__dict__") or isinstance(value, dict):
+            print("recursion value:", value, "(key:", key, ")")
             params[key] = extract_params(value)
         else:
             params[key] = str(type(value))
