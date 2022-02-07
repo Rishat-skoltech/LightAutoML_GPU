@@ -56,7 +56,8 @@ def extract_params(input_struct, device='cpu'):
         elif value is None:
             params[key] = None
         elif hasattr(value, "__dict__") or isinstance(value, dict):
-            if not isinstance(value, Client):
+            if isinstance(value, Client):
+                print("Client_val:", val)
                 pass
             else:
                 print("recursion value:", value, "(key:", key, ")")
