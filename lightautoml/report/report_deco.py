@@ -506,7 +506,7 @@ class ReportDeco:
         except:
             self._device = 'cpu'
         assert self._device in ['cpu', 'gpu', 'mgpu'], "Device must be one of cpu, gpu, mgpu!"
-        print(f"Model device is {self._device}")
+        # print(f"Model device is {self._device}")
         # add informataion to report
         self._model_name = model.__class__.__name__
         self._model_parameters = json2html.convert(extract_params(model, device=self._device))
