@@ -56,8 +56,9 @@ def extract_params(input_struct, device='cpu'):
         elif value is None:
             params[key] = None
         elif isinstance(value, Client):
+            params[key] = dict()
             for k,v in zip(value.__dict__.keys(), value.__dict__.values()):
-                params[key][k] = v
+                params[key][k] = v.__repr__()
         elif (hasattr(value, "__dict__") or isinstance(value, dict)) and not isinstance(value, Client):
             params[key] = extract_params(value)
         else:
