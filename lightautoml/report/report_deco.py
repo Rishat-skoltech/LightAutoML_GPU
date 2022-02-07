@@ -502,9 +502,10 @@ class ReportDeco:
     def __call__(self, model):
         self._model = model
         try:
-            self._device = model.device
+            self._device = model.task.device
         except:
             self._device = 'cpu'
+        assert self._device in ['cpu', 'gpu', 'mgpu'], "Device must be one of cpu, gpu, mgpu!"
         print(f"Model device is {self._device}")
         # add informataion to report
         self._model_name = model.__class__.__name__
