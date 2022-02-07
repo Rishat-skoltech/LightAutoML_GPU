@@ -42,8 +42,7 @@ base_dir = os.path.dirname(__file__)
 
 
 def extract_params(input_struct, device='cpu'):
-    if device is not None:
-        # TODO: change this import if device is mgpu
+    if device is 'mgpu':
         from dask.distributed import Client
     params = dict()
     iterator = input_struct if isinstance(input_struct, dict) else input_struct.__dict__
@@ -55,12 +54,16 @@ def extract_params(input_struct, device='cpu'):
             params[key] = value
         elif value is None:
             params[key] = None
-        elif isinstance(value, Client):
-            params[key] = dict()
-            for k,v in zip(value.__dict__.keys(), value.__dict__.values()):
-                params[key][k] = v.__repr__()
-        elif (hasattr(value, "__dict__") or isinstance(value, dict)) and not isinstance(value, Client):
-            params[key] = extract_params(value)
+        elif (hasattr(value, "__dict__") or isinstance(value, dict)):
+            if device is 'mgpu':
+                if isinstance(value, Client):
+                    params[key] = dict()
+                    for k, v in zip(value.__dict__.keys(), value.__dict__.values()):
+                        params[key][k] = v.__repr__()
+                else:
+                    params[key] = extract_params(value)
+            else:
+                params[key] = extract_params(value)
         else:
             params[key] = str(type(value))
     return params
@@ -498,10 +501,14 @@ class ReportDeco:
 
     def __call__(self, model):
         self._model = model
-
+        try:
+            self._device = model.device
+        except:
+            self._device = 'cpu'
+        print(f"Model device is {self._device}")
         # add informataion to report
         self._model_name = model.__class__.__name__
-        self._model_parameters = json2html.convert(extract_params(model))
+        self._model_parameters = json2html.convert(extract_params(model, device=self._device))
         self._model_summary = None
 
         self._sections = {}
