@@ -43,11 +43,11 @@ base_dir = os.path.dirname(__file__)
 
 def extract_params(input_struct, device='cpu'):
     if device is not None:
+        # TODO: change this import if device is mgpu
         from dask.distributed import Client
     params = dict()
     iterator = input_struct if isinstance(input_struct, dict) else input_struct.__dict__
     for key in iterator:
-        print("KEY:", key)
         if key.startswith(("_", "autonlp_params")):
             continue
         value = iterator[key]
@@ -55,13 +55,11 @@ def extract_params(input_struct, device='cpu'):
             params[key] = value
         elif value is None:
             params[key] = None
-        elif hasattr(value, "__dict__") or isinstance(value, dict):
-            if isinstance(value, Client):
-                print("Client_val:", value)
-                pass
-            else:
-                print("recursion value:", value, "(key:", key, ")")
-                params[key] = extract_params(value)
+        elif isinstance(value, Client):
+            for k,v in zip(value.__dict__.keys(), value.__dict__.values()):
+                params[key][k] = v
+        elif (hasattr(value, "__dict__") or isinstance(value, dict)) and not isinstance(value, Client):
+            params[key] = extract_params(value)
         else:
             params[key] = str(type(value))
     return params
