@@ -41,7 +41,9 @@ logger = logging.getLogger(__name__)
 base_dir = os.path.dirname(__file__)
 
 
-def extract_params(input_struct):
+def extract_params(input_struct, device='cpu'):
+    if device is not None:
+        from dask.distributed import Client
     params = dict()
     iterator = input_struct if isinstance(input_struct, dict) else input_struct.__dict__
     for key in iterator:
@@ -54,8 +56,11 @@ def extract_params(input_struct):
         elif value is None:
             params[key] = None
         elif hasattr(value, "__dict__") or isinstance(value, dict):
-            print("recursion value:", value, "(key:", key, ")")
-            params[key] = extract_params(value)
+            if not isinstance(value, Client):
+                pass
+            else:
+                print("recursion value:", value, "(key:", key, ")")
+                params[key] = extract_params(value)
         else:
             params[key] = str(type(value))
     return params
