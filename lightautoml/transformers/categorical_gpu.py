@@ -18,6 +18,7 @@ import dask_cudf
 
 
 from cuml.preprocessing import OneHotEncoder
+from sklearn.preprocessing import OneHotEncoder as OHE_CPU
 
 from .base import LAMLTransformer
 from ..dataset.gpu_dataset import CudfDataset
@@ -270,8 +271,25 @@ class OHEEncoder_gpu(LAMLTransformer):
         make_sparse = self.make_sparse
         total_feats_cnt = self.total_feats_cnt
         dtype = self.dtype
-        # TODO: implement this method
-        raise NotImplementedError("This method is not implemented yet.")
+        ohe_gpu = self.ohe
+        ohe_cpu = OHE_CPU(categories='auto',
+                          dtype=self.dtype, sparse=self.make_sparse,
+                          handle_unknown='ignore')
+        gpu_cats = []
+        for col in ohe_gpu._features:
+            gpu_cats.append(ohe_gpu._encoders[col].__dict__['classes_'].to_pandas().values.copy())
+
+        ohe_cpu.n_features_in_ = len(ohe_gpu._features)
+        ohe_cpu.feature_names_in_ = ohe_gpu._features.values
+        ohe_cpu.categories_ = gpu_cats
+        ohe_cpu.drop_idx_ = ohe_gpu.drop_idx_
+
+        self.__class__ = OHEEncoder
+        self.__init__(make_sparse=make_sparse,
+                      total_feats_cnt=total_feats_cnt,
+                      dtype=dtype)
+        self.ohe = deepcopy(ohe_cpu)
+        return self
 
     def _fit_cupy(self, dataset: GpuNumericalDataset):
 
