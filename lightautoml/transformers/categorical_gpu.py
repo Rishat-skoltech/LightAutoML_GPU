@@ -34,7 +34,7 @@ from .categorical import encoding_check
 from .categorical import LabelEncoder
 
 from .categorical import LabelEncoder, OHEEncoder, FreqEncoder, TargetEncoder, MultiClassTargetEncoder,\
-    CatIntersectstions
+    CatIntersectstions, OrdinalEncoder
 
 GpuNumericalDataset = Union[CupyDataset, CudfDataset, DaskCudfDataset]
 
@@ -67,8 +67,8 @@ class LabelEncoder_gpu(LAMLTransformer):
         subs = deepcopy(self.subs)
         random_state = self.random_state
         features = deepcopy(self._features)
-        internal_dict = {i:v for i,v in
-                         zip(self.dicts.keys(), deepcopy(self.dicts.values().to_pandas()))}
+        internal_dict = {i:v.to_pandas() for i,v in
+                         zip(self.dicts.keys(), self.dicts.values())}
         self.__class__ = LabelEncoder
         self.subs = subs
         self.random_state = random_state
@@ -386,7 +386,10 @@ class OHEEncoder_gpu(LAMLTransformer):
         data = dataset.data
 
         # transform
-        data = self.ohe.transform(data).tocsr()
+        if self.make_sparse:
+            data = self.ohe.transform(data).tocsr()
+        else:
+            data = self.ohe.transform(data)
 
         # create resulted
         output = dataset.empty()
@@ -449,8 +452,8 @@ class FreqEncoder_gpu(LabelEncoder_gpu):
         subs = deepcopy(self.subs)
         random_state = self.random_state
         features = deepcopy(self._features)
-        internal_dict = {i: v for i, v in
-                         zip(self.dicts.keys(), deepcopy(self.dicts.values().to_pandas()))}
+        internal_dict = {i: v.to_pandas() for i, v in
+                         zip(self.dicts.keys(), self.dicts.values())}
         self.__class__ = FreqEncoder
         self.subs = subs
         self.random_state = random_state
@@ -1433,9 +1436,9 @@ class OrdinalEncoder_gpu(LabelEncoder_gpu):
         subs = deepcopy(self.subs)
         random_state = self.random_state
         features = deepcopy(self._features)
-        internal_dict = {i:v for i,v in
-                         zip(self.dicts.keys(), deepcopy(self.dicts.values().to_pandas()))}
-        self.__class__ = OrdinalEncoder_gpu
+        internal_dict = {i: v.to_pandas() for i, v in
+                         zip(self.dicts.keys(), self.dicts.values())}
+        self.__class__ = OrdinalEncoder
         self.subs = subs
         self.random_state = random_state
         self.dicts = internal_dict

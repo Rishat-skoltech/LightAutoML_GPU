@@ -293,7 +293,7 @@ class DateSeasons_gpu(LAMLTransformer):
         self.__class__ = DateSeasons
         self.output_role = output_role
         self.transformations = transformations
-        self.features = features
+        self._features = features
         self.output_role = output_role
         return self
 
