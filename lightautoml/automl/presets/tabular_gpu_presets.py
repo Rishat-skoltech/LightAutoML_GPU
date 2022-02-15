@@ -15,6 +15,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+import cupy as cp
 import torch
 
 from joblib import Parallel
@@ -625,6 +626,9 @@ class TabularAutoML_gpu(TabularAutoML):
         #if data input is from gpu then let it ouput gpu as well
 
         return res
+
+    def to_cpu(self):
+        pass
 
 
 class TabularUtilizedAutoML_gpu(TabularUtilizedAutoML):

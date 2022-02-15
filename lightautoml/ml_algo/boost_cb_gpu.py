@@ -75,7 +75,9 @@ class BoostCB_gpu(TabularMLAlgo_gpu, ImportanceEstimator):
         "max_ctr_complexity": 1
     }
 
-    
+    def to_cpu(self):
+        pass
+
     def _infer_params(self) -> Tuple[dict, int, int, Callable, Callable]:
         """Infer all parameters.
 
