@@ -40,7 +40,7 @@ class TimeToNum_gpu(LAMLTransformer):
     basic_time = "2020-01-01"
     basic_interval = "D"
 
-    _fname_prefix = "dtdiff_gpu"
+    _fname_prefix = "dtdiff"
     _fit_checks = (datetime_check,)
     _transform_checks = ()
 
@@ -134,7 +134,7 @@ class BaseDiff_gpu(LAMLTransformer):
     """
     basic_interval = "D"
 
-    _fname_prefix = "basediff_gpu"
+    _fname_prefix = "basediff"
     _fit_checks = (datetime_check,)
     _transform_checks = ()
 
@@ -265,7 +265,7 @@ class DateSeasons_gpu(LAMLTransformer):
     Datetime converted to difference with basic_date.
     """
 
-    _fname_prefix = "season_gpu"
+    _fname_prefix = "season"
     _fit_checks = (datetime_check,)
     _transform_checks = ()
 

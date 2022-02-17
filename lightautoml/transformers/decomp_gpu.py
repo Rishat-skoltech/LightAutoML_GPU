@@ -29,7 +29,7 @@ class PCATransformer_gpu(LAMLTransformer):
 
     _fit_checks = (numeric_check,)
     _transform_checks = ()
-    _fname_prefix = 'pca_gpu'
+    _fname_prefix = 'pca'
 
     @property
     def features(self) -> List[str]:
@@ -107,7 +107,7 @@ class SVDTransformer_gpu(LAMLTransformer):
 
     _fit_checks = (numeric_check,)
     _transform_checks = ()
-    _fname_prefix = 'svd_gpu'
+    _fname_prefix = 'svd'
 
     @property
     def features(self) -> List[str]:

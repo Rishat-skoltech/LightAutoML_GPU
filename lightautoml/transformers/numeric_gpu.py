@@ -33,7 +33,7 @@ class NaNFlags_gpu(LAMLTransformer):
 
     _fit_checks = (numeric_check,)
     _transform_checks = ()
-    _fname_prefix = 'nanflg_gpu'
+    _fname_prefix = 'nanflg'
 
     def __init__(self, nan_rate: float = .005):
         """
@@ -148,7 +148,7 @@ class FillnaMedian_gpu(LAMLTransformer):
 
     _fit_checks = (numeric_check,)
     _transform_checks = ()
-    _fname_prefix = 'fillnamed_gpu'
+    _fname_prefix = 'fillnamed'
     
     def _fit_cupy(self, dataset: CupyTransformable):
 
@@ -241,7 +241,7 @@ class FillInf_gpu(LAMLTransformer):
 
     _fit_checks = (numeric_check,)
     _transform_checks = ()
-    _fname_prefix = 'fillinf_gpu'
+    _fname_prefix = 'fillinf'
 
     def to_cpu(self):
         features = deepcopy(self._features)
@@ -303,7 +303,7 @@ class LogOdds_gpu(LAMLTransformer):
 
     _fit_checks = (numeric_check,)
     _transform_checks = ()
-    _fname_prefix = 'logodds_gpu'
+    _fname_prefix = 'logodds'
 
     def to_cpu(self):
         features = deepcopy(self._features)
@@ -367,7 +367,7 @@ class StandardScaler_gpu(LAMLTransformer):
 
     _fit_checks = (numeric_check,)
     _transform_checks = ()
-    _fname_prefix = 'scaler_gpu'
+    _fname_prefix = 'scaler'
 
     def _fit_cupy(self, dataset: CupyTransformable):
 
@@ -470,7 +470,7 @@ class QuantileBinning_gpu(LAMLTransformer):
 
     _fit_checks = (numeric_check,)
     _transform_checks = ()
-    _fname_prefix = 'qntl_gpu'
+    _fname_prefix = 'qntl'
 
     def __init__(self, nbins: int = 10):
         """

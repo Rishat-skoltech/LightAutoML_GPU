@@ -43,6 +43,8 @@ from ..dataset.gpu_dataset import DaskCudfDataset
 
 from ..validation.base import TrainValidIterator
 
+from .linear_sklearn import LinearLBFGS
+
 logger = logging.getLogger(__name__)
 
 LinearEstimator = Union[LogisticRegression, ElasticNet, Lasso]
@@ -129,6 +131,22 @@ class LinearLBFGS_gpu(TabularMLAlgo_gpu):
         else:
             raise ValueError('Task not supported')
         return model
+
+    def to_cpu(self):
+        models = [deepcopy(model) for model in self.models]
+        for i in range(len(models)):
+            models[i].model.cpu()
+            models[i].loss.cpu()
+        #models = [model.cpu() for model in models]
+        algo = LinearLBFGS(default_params=self.default_params,
+                           freeze_defaults=self.freeze_defaults,
+                           timer=self.timer)
+        algo.models = deepcopy(models)
+        algo._features = self._features
+        algo._nan_rate = self._nan_rate
+        algo._name = self._name
+        algo._params = deepcopy(self._params)
+        return algo
 
     def init_params_on_input(self, train_valid_iterator: TrainValidIterator) -> dict:
 

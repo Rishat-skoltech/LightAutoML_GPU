@@ -151,13 +151,17 @@ class MLPipeline:
             Dataset with predictions of all trained models.
 
         """
+        print("MLPipeline... Worker (pre):", self.pre_selection.__class__.__name__)
         dataset = self.pre_selection.select(dataset)
+        print("MLPipeline... Worker (feats_pipe):", self.features_pipeline.__class__.__name__)
         dataset = self.features_pipeline.transform(dataset)
+        print("MLPipeline... Worker (post):", self.post_selection.__class__.__name__)
         dataset = self.post_selection.select(dataset)
 
         predictions = []
-
+        print('Entering ml algos loop...')
         for model in self.ml_algos:
+            print("\tIn MLPipeline... Worker:", model.__class__.__name__)
             pred = model.predict(dataset)
             predictions.append(pred)
 

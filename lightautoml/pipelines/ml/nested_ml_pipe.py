@@ -15,6 +15,7 @@ import pandas as pd
 
 from pandas import Series
 
+import lightautoml
 from ...dataset.np_pd_dataset import NumpyDataset
 from ...ml_algo.base import PandasDataset
 from ...ml_algo.base import TabularDataset
@@ -30,7 +31,6 @@ from ..features.base import FeaturesPipeline
 from ..selection.base import SelectionPipeline
 from ..selection.importance_based import ImportanceEstimator
 from .base import MLPipeline
-
 
 logger = logging.getLogger(__name__)
 
@@ -64,12 +64,12 @@ class NestedTabularMLAlgo(TabularMLAlgo, ImportanceEstimator):
         return self._ml_algo.init_params_on_input(train_valid_iterator)
 
     def __init__(
-        self,
-        ml_algo: TabularMLAlgo,
-        tuner: Optional[ParamsTuner] = None,
-        refit_tuner: bool = False,
-        cv: int = 5,
-        n_folds: Optional[int] = None,
+            self,
+            ml_algo: TabularMLAlgo,
+            tuner: Optional[ParamsTuner] = None,
+            refit_tuner: bool = False,
+            cv: int = 5,
+            n_folds: Optional[int] = None,
     ):
         self._name = ml_algo.name
         self._default_params = ml_algo.default_params
@@ -189,16 +189,16 @@ class NestedTabularMLPipeline(MLPipeline):
     """
 
     def __init__(
-        self,
-        ml_algos: Sequence[Union[TabularMLAlgo, Tuple[TabularMLAlgo, ParamsTuner]]],
-        force_calc: Union[bool, Sequence[bool]] = True,
-        pre_selection: Optional[SelectionPipeline] = None,
-        features_pipeline: Optional[FeaturesPipeline] = None,
-        post_selection: Optional[SelectionPipeline] = None,
-        cv: int = 1,
-        n_folds: Optional[int] = None,
-        inner_tune: bool = False,
-        refit_tuner: bool = False,
+            self,
+            ml_algos: Sequence[Union[TabularMLAlgo, Tuple[TabularMLAlgo, ParamsTuner]]],
+            force_calc: Union[bool, Sequence[bool]] = True,
+            pre_selection: Optional[SelectionPipeline] = None,
+            features_pipeline: Optional[FeaturesPipeline] = None,
+            post_selection: Optional[SelectionPipeline] = None,
+            cv: int = 1,
+            n_folds: Optional[int] = None,
+            inner_tune: bool = False,
+            refit_tuner: bool = False,
     ):
         """
 
@@ -238,3 +238,34 @@ class NestedTabularMLPipeline(MLPipeline):
             ml_algos = new_ml_algos
 
         super().__init__(ml_algos, force_calc, pre_selection, features_pipeline, post_selection)
+
+    def to_cpu(self):
+        def convert_recursive_cpu(pipeline):
+            print("Working...", pipeline.__class__.__name__)
+            if hasattr(pipeline, 'transformer_list'):
+                for i in range(len(pipeline.transformer_list)):
+                    convert_recursive_cpu(pipeline.transformer_list[i])
+            else:
+                print("transformer name is:", pipeline.__class__.__name__)
+                if hasattr(pipeline, 'to_cpu'):
+                    pipeline.to_cpu()
+                else:
+                    print(f"transformer {pipeline.__class__.__name__} doesn't need to be changed to cpu")
+                if hasattr(pipeline, 'dataset_type'):
+                    print("converting dataset types...", end='')
+                    if pipeline.dataset_type == lightautoml.dataset.gpu_dataset.DaskCudfDataset or \
+                            pipeline.dataset_type == lightautoml.dataset.gpu_dataset.CudfDataset:
+                        pipeline.dataset_type = lightautoml.dataset.np_pd_dataset.PandasDataset
+                    elif pipeline.dataset_type == lightautoml.dataset.gpu_dataset.CupyDataset:
+                        pipeline.dataset_type = lightautoml.dataset.np_pd_dataset.NumpyDataset
+                    print("OK")
+
+        convert_recursive_cpu(self.features_pipeline._pipeline)
+
+        print("Converting ML algorithms...", end='')
+        for i in range(len(self.ml_algos)):
+            print(self.ml_algos[i].__class__.__name__)
+            self.ml_algos[i] = deepcopy(self.ml_algos[i].to_cpu())
+        print("OK")
+        print("Done")
+

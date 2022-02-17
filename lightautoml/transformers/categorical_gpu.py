@@ -48,7 +48,7 @@ class LabelEncoder_gpu(LAMLTransformer):
     """
     _fit_checks = (categorical_check,)
     _transform_checks = ()
-    _fname_prefix = 'le_gpu'
+    _fname_prefix = 'le'
     _fillna_val = 0
 
     def __init__(self, subs: Optional[int] = None, random_state: int = 42):
@@ -238,7 +238,7 @@ class OHEEncoder_gpu(LAMLTransformer):
 
     _fit_checks = (categorical_check, encoding_check)
     _transform_checks = ()
-    _fname_prefix = 'ohe_gpu'
+    _fname_prefix = 'ohe'
 
     @property
     def features(self) -> List[str]:
@@ -440,7 +440,7 @@ class FreqEncoder_gpu(LabelEncoder_gpu):
 
     _fit_checks = (categorical_check,)
     _transform_checks = ()
-    _fname_prefix = "freq_gpu"
+    _fname_prefix = "freq"
 
     _fillna_val = 1
 
@@ -508,7 +508,7 @@ class TargetEncoder_gpu(LAMLTransformer):
     """
     _fit_checks = (categorical_check, oof_task_check, encoding_check)
     _transform_checks = ()
-    _fname_prefix = 'oof_gpu'
+    _fname_prefix = 'oof'
 
     def __init__(self, alphas: Sequence[float] = (.5, 1., 2., 5., 10., 50., 250., 1000.)):
         """
@@ -908,7 +908,7 @@ class MultiClassTargetEncoder_gpu(LAMLTransformer):
 
     _fit_checks = (categorical_check, multiclass_task_check, encoding_check)
     _transform_checks = ()
-    _fname_prefix = 'multioof_gpu'
+    _fname_prefix = 'multioof'
 
     @property
     def features(self) -> List[str]:
@@ -1271,7 +1271,7 @@ class CatIntersections_gpu(LabelEncoder_gpu):
 
     _fit_checks = (categorical_check,)
     _transform_checks = ()
-    _fname_prefix = 'inter_gpu'
+    _fname_prefix = 'inter'
 
     def __init__(
         self,
@@ -1425,7 +1425,7 @@ class OrdinalEncoder_gpu(LabelEncoder_gpu):
 
     _fit_checks = (categorical_check,)
     _transform_checks = ()
-    _fname_prefix = 'ord_gpu'
+    _fname_prefix = 'ord'
     _fillna_val = cp.nan
 
     def __init__(self, *args, **kwargs):

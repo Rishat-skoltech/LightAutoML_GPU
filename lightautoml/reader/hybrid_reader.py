@@ -160,6 +160,8 @@ class HybridReader(CudfReader):
 
         for i in range(self.num_cpu_readers):
             readers.append(PandasToPandasReader(self.task, *self.args, **self.params, n_jobs = self.n_jobs, advanced_roles=self.advanced_roles))
+        print(names)
+        print(len(readers))
         for i, reader in enumerate(readers):
             names[i].append(self.target)
 

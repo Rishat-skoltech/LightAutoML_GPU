@@ -627,8 +627,6 @@ class TabularAutoML_gpu(TabularAutoML):
 
         return res
 
-    def to_cpu(self):
-        pass
 
 
 class TabularUtilizedAutoML_gpu(TabularUtilizedAutoML):

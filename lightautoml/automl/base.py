@@ -297,6 +297,7 @@ class AutoML:
             for _n, ml_pipe in enumerate(level):
                 print("PIPE algo:", ml_pipe)
                 print("PIPE algo attrs:", ml_pipe.__dict__)
+                print("Worker:", ml_pipe.__class__.__name__)
                 level_predictions.append(ml_pipe.predict(dataset))
 
             if n != len(self.levels):
@@ -319,6 +320,25 @@ class AutoML:
                 if (return_all_predictions is None and self.return_all_predictions) or return_all_predictions:
                     return concatenate(level_predictions)
                 return self.blender.predict(level_predictions)
+
+    def to_cpu(self):
+        print(self.__class__.__name__)
+        self.reader = self.reader.to_cpu()
+
+        for n, level in enumerate(self.levels, 1):
+            # check if last level
+
+            for _n, ml_pipe in enumerate(level):
+                print(ml_pipe.__class__.__name__)
+                try:
+                    ml_pipe.to_cpu()
+                except Exception as e:
+                    print(f"Unable to call method to_cpu in {ml_pipe.__class__.__name__}")
+                    print("Error is", e)
+        try:
+            self.blender = self.blender.to_cpu()
+        except:
+            print(f"Blender {self.blender.__class__.__name__} can't be converted to cpu.")
 
     def collect_used_feats(self) -> List[str]:
         """Get feats that automl uses on inference.

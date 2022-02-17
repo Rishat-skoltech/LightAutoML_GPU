@@ -1,5 +1,5 @@
 """Blenders (GPU version)."""
-
+import copy
 import logging
 
 from typing import Callable
@@ -241,3 +241,12 @@ class WeightedBlender_gpu(WeightedBlender):
         outp = self._get_weighted_pred(splitted_preds, self.wts)
 
         return outp
+
+    def to_cpu(self):
+        wts = copy.deepcopy(cp.asnumpy(self.wts))
+        blender = WeightedBlender(max_iters=self.max_iters,
+                                  max_inner_iters=self.max_inner_iters,
+                                  max_nonzero_coef=self.max_nonzero_coef)
+        blender.wts = wts
+        return blender
+
