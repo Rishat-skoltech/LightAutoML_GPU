@@ -161,8 +161,10 @@ class MLPipeline:
         predictions = []
         print('Entering ml algos loop...')
         for model in self.ml_algos:
-            print("\tIn MLPipeline... Worker:", model.__class__.__name__)
+            print("\tIn MLPipeline... Worker:", model.__class__.__name__,'type is', type(model), end=' ')
             pred = model.predict(dataset)
+            print("OK")
+            print(f"\t\tPrediction type is {pred.__class__.__name__}")
             predictions.append(pred)
 
         predictions = concatenate(predictions)

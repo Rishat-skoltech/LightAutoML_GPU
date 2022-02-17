@@ -2,7 +2,7 @@
 
 import logging
 
-from copy import copy
+from copy import copy, deepcopy
 from typing import Callable
 from typing import Dict
 from typing import Tuple
@@ -26,6 +26,9 @@ from ..validation.base import TrainValidIterator
 from .base_gpu import TabularMLAlgo_gpu
 from .tuning.base import Distribution
 from .tuning.base import SearchSpace
+
+from ..tasks import Task
+from .boost_cb import BoostCB
 
 logger = logging.getLogger(__name__)
 TabularDataset = Union[NumpyDataset, CSRSparseDataset, PandasDataset, CupyDataset, CudfDataset]
@@ -74,9 +77,6 @@ class BoostCB_gpu(TabularMLAlgo_gpu, ImportanceEstimator):
         "verbose": False,
         "max_ctr_complexity": 1
     }
-
-    def to_cpu(self):
-        pass
 
     def _infer_params(self) -> Tuple[dict, int, int, Callable, Callable]:
         """Infer all parameters.
@@ -291,6 +291,26 @@ class BoostCB_gpu(TabularMLAlgo_gpu, ImportanceEstimator):
         )
 
         return pool
+
+    def to_cpu(self):
+        default_params = deepcopy(self._default_params)
+        default_params['task_type'] = 'CPU'
+        default_params['devices'] = None
+        task = Task(name=self.task._name,
+                    device='cpu',
+                    metric=self.task.metric_name,
+                    greater_is_better=self.task.greater_is_better)
+        algo = BoostCB(default_params=default_params,
+                       )
+        print("Models parameters:", self.models[0].__dict__)
+        print("Models type:", type(self.models[0]))
+        models = deepcopy(self.models)
+        for i in range(len(models)):
+            models[i]._init_params['task_type'] = 'CPU'
+        algo.task = task
+        algo.models = models
+        print("CB feats:", self.__dict__)
+        return algo
 
     def fit_predict_single_fold(self, train: TabularDataset, valid: TabularDataset, dev_id: int = None) -> Tuple[cb.CatBoost, np.ndarray]:
         """Implements training and prediction on single fold.

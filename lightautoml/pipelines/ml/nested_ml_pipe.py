@@ -265,7 +265,13 @@ class NestedTabularMLPipeline(MLPipeline):
         print("Converting ML algorithms...", end='')
         for i in range(len(self.ml_algos)):
             print(self.ml_algos[i].__class__.__name__)
-            self.ml_algos[i] = deepcopy(self.ml_algos[i].to_cpu())
+            try:
+                self.ml_algos[i] = deepcopy(self.ml_algos[i].to_cpu())
+            except Exception as e:
+                print(f"Unable to call method to_cpu in {self.ml_algos[i].__class__.__name__}")
+                print("Error is", e)
+
         print("OK")
         print("Done")
+        return self
 

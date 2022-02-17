@@ -243,10 +243,13 @@ class WeightedBlender_gpu(WeightedBlender):
         return outp
 
     def to_cpu(self):
+        print("Blender dict:", self.__dict__)
         wts = copy.deepcopy(cp.asnumpy(self.wts))
         blender = WeightedBlender(max_iters=self.max_iters,
                                   max_inner_iters=self.max_inner_iters,
                                   max_nonzero_coef=self.max_nonzero_coef)
         blender.wts = wts
+        blender._outp_dim = self._outp_dim
+        blender._outp_prob = self._outp_prob
         return blender
 

@@ -1,5 +1,3 @@
-"""Wrapped xgboost for tabular datasets."""
-
 from time import perf_counter
 
 import logging
@@ -15,26 +13,20 @@ from xgboost import dask as dxgb
 
 import numpy as np
 import pandas as pd
-import cupy as cp
 
 from pandas import Series
 
-from ..dataset.gpu_dataset import DaskCudfDataset
-from ..dataset.gpu_dataset import CudfDataset
-from .base_gpu import TabularMLAlgo_gpu
-from .base_gpu import TabularDatasetGpu
+from ..dataset.np_pd_dataset import NumpyDataset, PandasDataset
+from .base import TabularMLAlgo
+from .base import TabularDataset
 from ..pipelines.selection.base import ImportanceEstimator
 from ..validation.base import TrainValidIterator
 from .tuning.base import Distribution
 from .tuning.base import SearchSpace
 
-from .boost_xgb import BoostXGB as BoosterCPU
-
-from ..tasks import Task
-
 logger = logging.getLogger(__name__)
 
-class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
+class BoostXGB(TabularMLAlgo, ImportanceEstimator):
     """Gradient boosting on decision trees from LightGBM library.
 
     default_params: All available parameters listed in lightgbm documentation:
@@ -52,8 +44,8 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
     _name: str = 'XGB'
 
     _default_params = {
-        'tree_method':'gpu_hist',
-        'predictor':'gpu_predictor',
+        'tree_method': 'hist',
+        'predictor': 'cpu_predictor',
         'task': 'train',
         "learning_rate": 0.05,
         "max_leaves": 128,
@@ -105,24 +97,6 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
 
         return params, num_trees, early_stopping_rounds, verbose_eval, fobj, feval
 
-    def to_cpu(self):
-        print("XGB:", self.__dict__)
-        print("XGB model type:", self.models[0].__class__.__name__)
-        print("XGB model:", self.models[0].__dict__)
-        models = deepcopy(self.models)
-        for i in range(len(models)):
-            models[i].set_param({"predictor": "cpu_predictor"})
-
-        task = Task(name=self.task._name,
-                    device='cpu',
-                    metric=self.task.metric_name,
-                    greater_is_better=self.task.greater_is_better)
-
-        algo = BoosterCPU()
-        algo.models = deepcopy(models)
-        algo.task = task
-
-        return algo
 
     def init_params_on_input(self, train_valid_iterator: TrainValidIterator) -> dict:
         """Get model parameters depending on dataset parameters.
@@ -213,7 +187,6 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
         """
         optimization_search_space = {}
 
-
         optimization_search_space['max_depth'] = SearchSpace(
             Distribution.INTUNIFORM,
             low=3,
@@ -247,7 +220,8 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
 
         return optimization_search_space
 
-    def fit_predict_single_fold(self, train: TabularDatasetGpu, valid: TabularDatasetGpu, dev_id: int = 0) -> Tuple[xgb.Booster, np.ndarray]:
+    def fit_predict_single_fold(self, train: TabularDataset, valid: TabularDataset) -> Tuple[
+        xgb.Booster, np.ndarray]:
         """Implements training and prediction on single fold.
 
         Args:
@@ -265,44 +239,34 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
         valid_weights = valid.weights
         train_data = train.data
         valid_data = valid.data
-        with cp.cuda.Device(dev_id):
-            if type(train) == DaskCudfDataset:
-                train_target = train_target.compute()
-                if train_weights is not None:
-                    train_weights = train_weights.compute()
-                valid_target = valid_target.compute()
-                if valid_weights is not None:
-                    valid_weights = valid_weights.compute()
-                train_data = train_data.compute()
-                valid_data = valid_data.compute()
-            elif type(train) == CudfDataset:
-                train_target = train_target.copy()
-                if train_weights is not None:
-                    train_weights = train_weights.copy()
-                valid_target = valid_target.copy()
-                if valid_weights is not None:
-                    valid_weights = valid_weights.copy()
-                train_data = train_data.copy()
-                valid_data = valid_data.copy()
-            elif type(train_target) == cp.ndarray:
-                train_target = cp.copy(train_target)
-                if train_weights is not None:
-                    train_weights = cp.copy(train_weights)
-                valid_target = cp.copy(valid_target)
-                if valid_weights is not None:
-                    valid_weights = cp.copy(valid_weights)
-                train_data = cp.copy(train_data)
-                valid_data = cp.copy(valid_data)
-            else:
-                raise NotImplementedError("given type of input is not implemented:" + str(type(train_target)) + "class:" + str(self._name))
 
+        if type(train) == PandasDataset:
+            train_target = train_target.copy()
+            if train_weights is not None:
+                train_weights = train_weights.copy()
+            valid_target = valid_target.copy()
+            if valid_weights is not None:
+                valid_weights = valid_weights.copy()
+            train_data = train_data.copy()
+            valid_data = valid_data.copy()
+        elif type(train_target) == np.ndarray:
+            train_target = np.copy(train_target)
+            if train_weights is not None:
+                train_weights = np.copy(train_weights)
+            valid_target = np.copy(valid_target)
+            if valid_weights is not None:
+                valid_weights = np.copy(valid_weights)
+            train_data = np.copy(train_data)
+            valid_data = np.copy(valid_data)
+        else:
+            raise NotImplementedError(
+                "given type of input is not implemented:" + str(type(train_target)) + "class:" + str(self._name))
 
         params, num_trees, early_stopping_rounds, verbose_eval, fobj, feval = self._infer_params()
         train_target, train_weight = self.task.losses['xgb'].fw_func(train_target, train_weights)
         valid_target, valid_weight = self.task.losses['xgb'].fw_func(valid_target, valid_weights)
         xgb_train = xgb.DMatrix(train_data, label=train_target, weight=train_weight)
         xgb_valid = xgb.DMatrix(valid_data, label=valid_target, weight=valid_weight)
-        params['gpu_id'] = dev_id
         model = xgb.train(params, xgb_train, num_boost_round=num_trees, evals=[(xgb_train, 'train'), (xgb_valid, 'valid')],
                           obj=fobj, feval=feval, early_stopping_rounds=early_stopping_rounds, verbose_eval=verbose_eval
                           )
@@ -310,11 +274,11 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
         val_pred = self.task.losses['xgb'].bw_func(val_pred)
 
         print(perf_counter() - st, "xgb single fold time")
-        with cp.cuda.Device(0):
-            val_pred = cp.copy(val_pred)
+
+        val_pred = np.copy(val_pred)
         return model, val_pred
 
-    def predict_single_fold(self, model: xgb.Booster, dataset: TabularDatasetGpu) -> np.ndarray:
+    def predict_single_fold(self, model: xgb.Booster, dataset: TabularDataset) -> np.ndarray:
         """Predict target values for dataset.
 
         Args:
@@ -326,8 +290,6 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
 
         """
         dataset_data = dataset.data
-        if type(dataset) == DaskCudfDataset:
-            dataset_data = dataset_data.compute()
 
         pred = self.task.losses['xgb'].bw_func(model.inplace_predict(dataset_data))
 
@@ -341,7 +303,7 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
 
         """
 
-        #FIRST SORT TO FEATURES AND THEN SORT BACK TO IMPORTANCES - BAD
+        # FIRST SORT TO FEATURES AND THEN SORT BACK TO IMPORTANCES - BAD
         imp = 0
         for model in self.models:
             val = model.get_score(importance_type='gain')
@@ -350,7 +312,7 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
             imp = imp + scores
 
         imp = imp / len(self.models)
-        
+
         return pd.Series(imp, index=self.features).sort_values(ascending=False)
 
     def fit(self, train_valid: TrainValidIterator):
@@ -361,84 +323,3 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
 
         """
         self.fit_predict(train_valid)
-        
-class BoostXGB_dask(BoostXGB):
-
-    def __init__(self, client, *args, **kwargs):
-
-        self.client = client
-        super().__init__(*args, **kwargs)
-        
-    def __deepcopy__(self, memo):
-
-        new_inst = type(self).__new__(self.__class__)
-        new_inst.client = self.client
-        
-        for k,v in super().__dict__.items():
-            if k != 'client':
-                setattr(new_inst, k, deepcopy(v, memo))
-        return new_inst
-        
-    def fit_predict_single_fold(self, train: DaskCudfDataset, valid: DaskCudfDataset, dev_id: int = 0) -> Tuple[dxgb.Booster, np.ndarray]:
-        """Implements training and prediction on single fold.
-
-        Args:
-            train: Train Dataset.
-            valid: Validation Dataset.
-
-        Returns:
-            Tuple (model, predicted_values)
-
-        """
-
-        params, num_trees, early_stopping_rounds, verbose_eval, fobj, feval = self._infer_params()
-
-        train_target, train_weight = self.task.losses['xgb'].fw_func(train.target, train.weights)
-        valid_target, valid_weight = self.task.losses['xgb'].fw_func(valid.target, valid.weights)
-
-        xgb_train = dxgb.DaskDeviceQuantileDMatrix(self.client, train.data, label=train_target, weight=train_weight)
-        xgb_valid = dxgb.DaskDeviceQuantileDMatrix(self.client, valid.data, label=valid_target, weight=valid_weight)
-        model = dxgb.train(self.client, params, xgb_train, num_boost_round=num_trees, evals=[(xgb_train, 'train'), (xgb_valid, 'valid')],
-                          obj=fobj, feval=feval, early_stopping_rounds=early_stopping_rounds, verbose_eval=verbose_eval
-                          )
-
-        val_pred = dxgb.inplace_predict(self.client, model, valid.data)
-        val_pred = self.task.losses['xgb'].bw_func(val_pred)
-
-        return model, val_pred
-
-    def predict_single_fold(self, model: dxgb.Booster, dataset: TabularDatasetGpu) -> np.ndarray:
-        """Predict target values for dataset.
-
-        Args:
-            model: Lightgbm object.
-            dataset: Test Dataset.
-
-        Return:
-            Predicted target values.
-
-        """
-        pred = self.task.losses['xgb'].bw_func(dxgb.inplace_predict(self.client, model, dataset.data))
-
-        return pred
-
-    def get_features_score(self) -> pd.Series:
-        """Computes feature importance as mean values of feature importance provided by lightgbm per all models.
-
-        Returns:
-            Series with feature importances.
-
-        """
-
-        #FIRST SORT TO FEATURES AND THEN SORT BACK TO IMPORTANCES - BAD
-        imp = 0
-        for model in self.models:
-            val = model['booster'].get_score(importance_type='gain')
-            sorted_list = [0.0 if val.get(i) is None else val.get(i) for i in self.features]
-            scores = np.array(sorted_list)
-            imp = imp + scores
-
-        imp = imp / len(self.models)
-        
-        return pd.Series(imp, index=self.features).sort_values(ascending=False)
-
