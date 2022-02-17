@@ -52,7 +52,7 @@ class HybridReader(CudfReader):
 
     def __init__(self, task: Task, num_cpu_readers: int = None, num_gpu_readers: int = None,
                  gpu_ratio: int = 0.5, advanced_roles: bool = True, output: str = None,
-                 index_ok: bool = False, npartitions: int = 1, 
+                 index_ok: bool = False, npartitions: int = 1,
                  compute: bool = False, n_jobs: int = 1,
                  *args: Any, **kwargs: Any):
         """
@@ -120,15 +120,21 @@ class HybridReader(CudfReader):
                 self.output = 'gpu'
             else:
                 self.output = 'mgpu'
-        print("READER:")
-        print("  output is:", self.output)
-        print("  num_gpu_readers:", self.num_gpu_readers)
-        print("  num_cpu_readers:", self.num_cpu_readers)
+
         train_columns = train_data.columns.difference([self.target])
         num_readers = self.num_gpu_readers + self.num_cpu_readers
         num_features = len(train_columns) - 1
         gpu_num_cols = int(num_features*self.gpu_ratio)
         cpu_num_cols = num_features - gpu_num_cols
+        if cpu_num_cols/self.num_cpu_readers < 1:
+            self.num_cpu_readers = 0
+            gpu_num_cols = num_features
+            cpu_num_cols = 0
+
+        print("READER:")
+        print("  output is:", self.output)
+        print("  num_gpu_readers:", self.num_gpu_readers)
+        print("  num_cpu_readers:", self.num_cpu_readers)
 
         single_gpu_num_cols = 0
         single_cpu_num_cols = 0
@@ -136,7 +142,7 @@ class HybridReader(CudfReader):
         if self.num_gpu_readers != 0:
             single_gpu_num_cols = int(gpu_num_cols/self.num_gpu_readers)
         if self.num_cpu_readers != 0:
-            single_cpu_num_cols = int(cpu_num_cols/self.num_cpu_readers)
+            single_cpu_num_cols = min(int(cpu_num_cols/self.num_cpu_readers), self.num_cpu_readers)
 
         div = []
         for i in range(self.num_gpu_readers):
@@ -160,8 +166,6 @@ class HybridReader(CudfReader):
 
         for i in range(self.num_cpu_readers):
             readers.append(PandasToPandasReader(self.task, *self.args, **self.params, n_jobs = self.n_jobs, advanced_roles=self.advanced_roles))
-        print(names)
-        print(len(readers))
         for i, reader in enumerate(readers):
             names[i].append(self.target)
 
@@ -217,22 +221,4 @@ class HybridReader(CudfReader):
         assert self.final_reader is not None, "reader should be fitted first"
 
         return self.final_reader.read(data, features_names, add_array_attrs)
-
-    def to_cpu(self):
-        # TODO:remove prints
-        print("TO_CPU called!")
-        print(type(self.final_reader))
-        if isinstance(self.final_reader, DaskCudfReader):
-            print('branch 1')
-            return self.final_reader.to_cpu()
-        elif isinstance(self.final_reader, CudfReader):
-            print('branch 2')
-            print("Returning pandas reader from cudf reader...")
-            return self.final_reader.to_cpu()
-        elif isinstance(self.final_reader, PandasToPandasReader):
-            print('branch 3')
-            return self.final_reader
-        else:
-            print("branch 4")
-            return self.final_reader.to_cpu()
 
