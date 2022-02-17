@@ -120,15 +120,21 @@ class HybridReader(CudfReader):
                 self.output = 'gpu'
             else:
                 self.output = 'mgpu'
-        print("READER:")
-        print("  output is:", self.output)
-        print("  num_gpu_readers:", self.num_gpu_readers)
-        print("  num_cpu_readers:", self.num_cpu_readers)
+
         train_columns = train_data.columns.difference([self.target])
         num_readers = self.num_gpu_readers + self.num_cpu_readers
         num_features = len(train_columns) - 1
         gpu_num_cols = int(num_features*self.gpu_ratio)
         cpu_num_cols = num_features - gpu_num_cols
+        if cpu_num_cols/self.num_cpu_readers < 1:
+            self.num_cpu_readers = 0
+            gpu_num_cols = num_features
+            cpu_num_cols = 0
+
+        print("READER:")
+        print("  output is:", self.output)
+        print("  num_gpu_readers:", self.num_gpu_readers)
+        print("  num_cpu_readers:", self.num_cpu_readers)
 
         single_gpu_num_cols = 0
         single_cpu_num_cols = 0
@@ -136,7 +142,7 @@ class HybridReader(CudfReader):
         if self.num_gpu_readers != 0:
             single_gpu_num_cols = int(gpu_num_cols/self.num_gpu_readers)
         if self.num_cpu_readers != 0:
-            single_cpu_num_cols = int(cpu_num_cols/self.num_cpu_readers)
+            single_cpu_num_cols = min(int(cpu_num_cols/self.num_cpu_readers), self.num_cpu_readers)
 
         div = []
         for i in range(self.num_gpu_readers):
