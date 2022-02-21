@@ -14,14 +14,9 @@ from os import listdir
 
 files = listdir('.')
 csv_files = [elem for elem in files if elem.endswith(".csv")]
-
-print(csv_files)
-csv_files.append('ashrae-energy-prediction/processed_train.csv')
-csv_files.append('ieee-fraud-detection/processed_train.csv')
-csv_files.append('bnp-paribas-cardif-claims-management/train.csv')
-csv_files.append('porto-seguro-safe-driver-prediction/train.csv')
 csv_files.append('springleaf-marketing-response/train.csv')
-csv_files.append('talkingdata-adtracking-fraud-detection/train.csv')
+print(csv_files)
+
 
 data_info = {
 
@@ -293,7 +288,7 @@ if __name__ == "__main__":
         print(TARGETS_DICT[cur_file])
         print("####################################")
 
-        data = pd.read_csv(cur_file)[:10000]
+        data = pd.read_csv(cur_file)
         cur_data_info = data_info[cur_file[:-4]]
 
         if 'read_csv_params' in cur_data_info:
@@ -310,9 +305,10 @@ if __name__ == "__main__":
 
         # run automl
         # this is for small amounts of data
-        automl = TabularUtilizedAutoML_gpu(task=Task(task_types[cur_file], device="mgpu"),
+        automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="gpu"),
                                            general_params={'parallel_folds': False},
-                                           timeout=3600)  # , client=client)
+                                           timeout=3600,
+                                   config_path='lama_single_gpu.yml')
         # automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="gpu"), timeout=3600)#, client=client)
         # this is for bigger amounts of data
         # automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="mgpu"))

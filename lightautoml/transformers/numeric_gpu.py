@@ -141,7 +141,7 @@ class FillnaMedian_gpu(LAMLTransformer):
     _fname_prefix = 'fillnamed_gpu'
     
     def _fit_cupy(self, dataset: CupyTransformable):
-
+        print("fit called on", dataset.features)
         # convert to accepted dtype and get attributes
         dataset = dataset.to_cupy()
         data = dataset.data
@@ -178,7 +178,7 @@ class FillnaMedian_gpu(LAMLTransformer):
         return self
 
     def _transform_cupy(self, dataset: CupyTransformable) -> CupyDataset:
-
+        print("Transform called on", dataset.features)
         # convert to accepted dtype and get attributes
         dataset = dataset.to_cupy()
         data = dataset.data
