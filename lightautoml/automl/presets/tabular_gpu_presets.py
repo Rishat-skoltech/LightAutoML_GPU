@@ -15,6 +15,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+import cupy as cp
 import torch
 
 from joblib import Parallel
