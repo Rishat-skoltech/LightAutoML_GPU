@@ -35,6 +35,7 @@ class ModelBasedImportanceEstimator(ImportanceEstimator):
         assert (
             ml_algo is not None
         ), "ModelBasedImportanceEstimator: raw importances are None and no MLAlgo to calculate them."
+        print("Entering selector...")
         self.raw_importances = ml_algo.get_features_score()
 
 

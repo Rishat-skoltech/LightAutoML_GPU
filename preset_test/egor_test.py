@@ -288,7 +288,7 @@ if __name__ == "__main__":
         print(TARGETS_DICT[cur_file])
         print("####################################")
 
-        data = pd.read_csv(cur_file)
+        data = pd.read_csv(cur_file)[:100]
         cur_data_info = data_info[cur_file[:-4]]
 
         if 'read_csv_params' in cur_data_info:

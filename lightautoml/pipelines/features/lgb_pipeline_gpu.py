@@ -81,7 +81,8 @@ class LGBSimpleFeatures_gpu(FeaturesPipeline):
             num_processing = SequentialTransformer([
 
                 ColumnsSelector(keys=numerics),
-                ConvertDataset(dataset_type=dataset_type)
+                ConvertDataset(dataset_type=CupyDataset)
+                #ConvertDataset(dataset_type=dataset_type)
 
             ])
             transformers_list.append(num_processing)

@@ -297,6 +297,7 @@ class ComposedSelector(SelectionPipeline):
             train_valid: Dataset iterator.
 
         """
+        print("Entering selector_base...")
         for selector in self.selectors:
             train_valid = train_valid.apply_selector(selector)
 
