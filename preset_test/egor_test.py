@@ -14,7 +14,7 @@ from os import listdir
 
 files = listdir('.')
 csv_files = [elem for elem in files if elem.endswith(".csv")]
-csv_files.append('springleaf-marketing-response/train.csv')
+#csv_files.append('springleaf-marketing-response/train.csv')
 print(csv_files)
 
 
@@ -288,7 +288,7 @@ if __name__ == "__main__":
         print(TARGETS_DICT[cur_file])
         print("####################################")
 
-        data = pd.read_csv(cur_file)[:100]
+        data = pd.read_csv(cur_file)
         cur_data_info = data_info[cur_file[:-4]]
 
         if 'read_csv_params' in cur_data_info:

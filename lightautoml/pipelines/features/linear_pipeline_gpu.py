@@ -199,4 +199,6 @@ class LinearFeatures_gpu(FeaturesPipeline, TabularDataFeatures_gpu):
         # final pipeline
         union_all = UnionTransformer(transformers_list)
 
+        print("CREATE PIPELINE:", transformers_list)
+
         return union_all
