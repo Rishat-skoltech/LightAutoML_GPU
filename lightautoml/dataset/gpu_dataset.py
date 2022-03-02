@@ -564,7 +564,7 @@ class CudfDataset(PandasDataset):
 
         """
         # check for empty
-        data = None if self.data is None else cp.asarray(self.data.values)
+        data = None if self.data is None else cp.asarray(self.data.fillna(cp.nan).values)
         roles = self.roles
         features = self.features
         # target and etc ..

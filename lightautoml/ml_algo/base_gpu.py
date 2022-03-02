@@ -87,7 +87,7 @@ class TabularMLAlgo_gpu(TabularMLAlgo):
             if type(val_data) == DaskCudfDataset:
                 outp_dim = int(val_data.target.max().compute()+1)
             else:
-                outp_dim = int(cp.max(val_data.target) + 1)
+                outp_dim = int(val_data.target.max()) + 1
         # save n_classes to infer params
         self.n_classes = outp_dim
 
