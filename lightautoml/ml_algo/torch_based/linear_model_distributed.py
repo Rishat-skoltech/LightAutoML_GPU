@@ -102,19 +102,23 @@ class TorchBasedLinearEstimator:
 
         if 0 < len(self.categorical_idx) < data.shape[1]:
             # noinspection PyTypeChecker
+            
             data_cat = torch.as_tensor(
-                data[self.categorical_idx].values.astype(cp.int32),
-                device=device_id
-            )
+                    data[self.categorical_idx].values.astype(cp.int32),
+                    device=device_id
+                )
             data_ = torch.as_tensor(
-                data[data.columns.difference(self.categorical_idx)] \
-                    .values.astype(cp.float32),
-                device=device_id
-            )
+                    data[data.columns.difference(self.categorical_idx)] \
+                        .values.astype(cp.float32),
+                    device=device_id
+                )
             return data_, data_cat, y, weights
 
         elif len(self.categorical_idx) == 0:
-            data_ = torch.as_tensor(data.values.astype(cp.float32), device=device_id)
+            if type(data) == cp.ndarray:
+                data_ = torch.as_tensor(data.astype(cp.float32), device=device_id)
+            else:
+                data_ = torch.as_tensor(data.values.astype(cp.float32), device=device_id)
             return data_, None, y, weights
 
         else:
@@ -224,7 +228,11 @@ class TorchBasedLinearEstimator:
 
         def closure():
             opt.zero_grad()
+            #print("############### TARGET CHECK....###########")
+            #assert (y>= 0).all and (y <=1).all(), 'Target is beyond'
+            #print("############### TARGET CHECK OK ###########")
             output = model(data, data_cat)
+            # assert not (output.isnan().any() is True), "Output contains NaN values!"
             loss = self._loss_fn(model, y.reshape(-1, 1), output, weights, c)
             if loss.requires_grad:
                 loss.backward()
@@ -273,9 +281,19 @@ class TorchBasedLinearEstimator:
             y_val: Optional[dask_cudf.DataFrame] = None,
             weights_val: Optional[cp.ndarray] = None,
             dev_id=None):
+        
+        print("####### ASSERTION CHECK.... ##########")
 
         assert self.model is not None, 'Model should be defined'
-
+        if type(data) == cp.ndarray:
+            assert not (data.isnan().any() is True), 'Data contains NaN values!'
+        elif type(data) == dask_cudf.DataFrame:
+            assert not (data.isna().any().compute() is True), 'Data contains NaN values!'
+        else:
+            assert not (data.isna().any() is True), 'Data contains NaN values!'
+            
+        print("####### ASSERTION PASSED OK ##########")
+            
         def train_iteration(data, y, weights, rank, c):
             model = deepcopy(self.model)  # .to(rank)
             model.to(rank)
@@ -294,7 +312,7 @@ class TorchBasedLinearEstimator:
         es = 0
         best_score = -np.inf
         for c in self.cs:
-            with Parallel(n_jobs=len(self.gpu_ids), backend='loky') as p:
+            with Parallel(n_jobs=len(self.gpu_ids), backend='threading') as p:
                 res = p(delayed(train_iteration)
                         (data, y, weights, int(device_id), c)
                         for device_id in self.gpu_ids)

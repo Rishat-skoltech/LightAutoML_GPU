@@ -226,7 +226,7 @@ class FillInf_gpu(LAMLTransformer):
     _fname_prefix = 'fillinf_gpu'
 
     def _inf_to_nan(self, data: cudf.DataFrame) -> cudf.DataFrame:
-        output = cp.where(cp.isinf(data.values), cp.nan, data.values)
+        output = cp.where(cp.isinf(data.fillna(cp.nan).values), cp.nan, data.fillna(cp.nan).values)
         return cudf.DataFrame(output, columns=self.features, index=data.index)
 
     def _transform_cupy(self, dataset: CupyTransformable) -> CupyDataset:

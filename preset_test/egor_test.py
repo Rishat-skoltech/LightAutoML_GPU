@@ -313,11 +313,11 @@ if __name__ == "__main__":
         # this is for bigger amounts of data
         # automl = TabularAutoML_gpu(task=Task(task_types[cur_file], device="mgpu"))
 
-        oof_predictions = automl.fit_predict(data, roles={'target': TARGETS_DICT[cur_file]}, verbose=2)
+        oof_predictions = automl.fit_predict(data.reset_index(drop=True), roles={'target': TARGETS_DICT[cur_file]}, verbose=2)
 
         print("NOW DOING PREDICTIONS")
 
-        te_pred = automl.predict(data)
+        te_pred = automl.predict(data.reset_index(drop=True))
 
         print(type(oof_predictions))
         print(type(te_pred))
