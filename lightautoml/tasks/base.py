@@ -22,21 +22,22 @@ from lightautoml.tasks.losses import LGBLoss
 from lightautoml.tasks.losses import SKLoss
 from lightautoml.tasks.losses import TORCHLoss
 from lightautoml.tasks.losses import TORCHLoss_gpu
-from lightautoml.tasks.losses import CUMLLoss
-from lightautoml.tasks.losses import XGBLoss_gpu
+from lightautoml.tasks.losses.gpu import CUMLLoss
+from lightautoml.tasks.losses.gpu import XGBLoss_gpu
 
 from .common_metric import _valid_metric_args
 from .common_metric import _valid_str_metric_names
-from .common_metric_gpu import _valid_str_metric_names_gpu
+from lightautoml.tasks.gpu.common_metric_gpu import _valid_str_metric_names_gpu
 from .utils import infer_gib
 from .utils import infer_gib_multiclass
-from .utils_gpu import infer_gib_gpu
-from .utils_gpu import infer_gib_multiclass_gpu
+from lightautoml.tasks.gpu.utils_gpu import infer_gib_gpu
+from lightautoml.tasks.gpu.utils_gpu import infer_gib_multiclass_gpu
 
 if TYPE_CHECKING:
     from ..dataset.base import LAMLDataset
     from ..dataset.np_pd_dataset import NumpyDataset
     from ..dataset.np_pd_dataset import PandasDataset
+    from ..dataset.gpu.gpu_dataset import CupyDataset, CudfDataset, DaskCudfDataset
 
     SklearnCompatible = Union[NumpyDataset, PandasDataset]
     CumlCompatible = Union[CupyDataset, CudfDataset, DaskCudfDataset]

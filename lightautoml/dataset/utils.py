@@ -11,8 +11,8 @@ from lightautoml.dataset.base import LAMLDataset
 from lightautoml.dataset.np_pd_dataset import CSRSparseDataset
 from lightautoml.dataset.np_pd_dataset import NumpyDataset
 from lightautoml.dataset.np_pd_dataset import PandasDataset
-from lightautoml.dataset.gpu_dataset import CupyDataset
-from lightautoml.dataset.gpu_dataset import CudfDataset
+from lightautoml.dataset.gpu.gpu_dataset import CupyDataset
+from lightautoml.dataset.gpu.gpu_dataset import CudfDataset
 from lightautoml.dataset.roles import ColumnRole
 
 

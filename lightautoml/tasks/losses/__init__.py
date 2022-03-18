@@ -6,9 +6,7 @@ from .lgb import LGBLoss
 from .sklearn import SKLoss
 from .torch import TORCHLoss
 from .torch import TorchLossWrapper
-from .torch_gpu import TORCHLoss_gpu
-from .cuml import CUMLLoss
-from .xgb_gpu import XGBLoss_gpu
+from lightautoml.tasks.losses.gpu.torch_gpu import TORCHLoss_gpu
 
 __all__ = [
     "LGBLoss",

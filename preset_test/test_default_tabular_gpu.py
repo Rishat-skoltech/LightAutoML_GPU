@@ -1,13 +1,9 @@
-from lightautoml.automl.presets.tabular_gpu_presets import TabularAutoML_gpu
-from lightautoml.automl.presets.tabular_gpu_presets import TabularUtilizedAutoML_gpu
+from lightautoml.automl.presets.gpu.tabular_gpu_presets import TabularUtilizedAutoML_gpu
 from lightautoml.tasks import Task
-from lightautoml.dataset.roles import TargetRole
 
 import pandas as pd
 import numpy as np
 
-from dask.distributed import Client
-from dask_cuda import LocalCUDACluster
 import cudf
 
 from os import listdir

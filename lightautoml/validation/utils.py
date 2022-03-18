@@ -9,14 +9,14 @@ from ..dataset.base import LAMLDataset
 from ..dataset.np_pd_dataset import CSRSparseDataset
 from ..dataset.np_pd_dataset import NumpyDataset
 from ..dataset.np_pd_dataset import PandasDataset
-from ..dataset.gpu_dataset import CupyDataset
-from ..dataset.gpu_dataset import CudfDataset
-from ..dataset.gpu_dataset import DaskCudfDataset
+from lightautoml.dataset.gpu.gpu_dataset import CupyDataset
+from lightautoml.dataset.gpu.gpu_dataset import CudfDataset
+from lightautoml.dataset.gpu.gpu_dataset import DaskCudfDataset
 from .base import DummyIterator
 from .base import HoldoutIterator
 from .base import TrainValidIterator
 from .np_iterators import get_numpy_iterator
-from .gpu_iterators import get_gpu_iterator
+from lightautoml.validation.gpu.gpu_iterators import get_gpu_iterator
 
 
 NpDataset = Union[CSRSparseDataset, NumpyDataset, PandasDataset]
