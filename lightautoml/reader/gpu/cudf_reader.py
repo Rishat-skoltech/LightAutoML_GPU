@@ -55,7 +55,7 @@ UserDefinedRole = Optional[Union[str, RoleType]]
 UserDefinedRolesDict = Dict[UserDefinedRole, Sequence[str]]
 UserDefinedRolesSequence = Sequence[UserDefinedRole]
 UserRolesDefinition = Optional[Union[UserDefinedRole, UserDefinedRolesDict,
-UserDefinedRolesSequence]]
+                                     UserDefinedRolesSequence]]
 
 
 class CudfReader(PandasToPandasReader):
@@ -74,11 +74,11 @@ class CudfReader(PandasToPandasReader):
     """
 
     def __init__(
-        self,
-        task: Task,
-        device_num: int = 0,
-        *args: Any,
-        **kwargs: Any):
+            self,
+            task: Task,
+            device_num: int = 0,
+            *args: Any,
+            **kwargs: Any):
         """
 
         Args:
@@ -166,7 +166,7 @@ class CudfReader(PandasToPandasReader):
         st = perf_counter()
 
         logger.info('Train data shape: {}'.format(train_data.shape))
-        parsed_roles, kwargs = self._prepare_roles_and_kwargs(roles, train_data, roles_parsed = roles_parsed, **kwargs)
+        parsed_roles, kwargs = self._prepare_roles_and_kwargs(roles, train_data, roles_parsed=roles_parsed, **kwargs)
         train_data, kwargs = self._prepare_data_and_target(train_data, **kwargs)
         # get subsample if it needed
         subsample = train_data
@@ -175,7 +175,7 @@ class CudfReader(PandasToPandasReader):
         # infer roles
         for feat in subsample.columns:
             assert isinstance(feat, str), 'Feature names must be string,' \
-                ' find feature name: {}, with type: {}'.format(feat, type(feat))
+                                          ' find feature name: {}, with type: {}'.format(feat, type(feat))
             if feat in parsed_roles:
                 r = parsed_roles[feat]
                 # handle datetimes
@@ -185,7 +185,7 @@ class CudfReader(PandasToPandasReader):
                     self._try_datetime(subsample[feat], r)
 
                 # replace default category dtype for numeric roles dtype
-                #if cat col dtype is numeric
+                # if cat col dtype is numeric
                 if r.name == 'Category':
                     # default category role
                     cat_role = self._get_default_role_from_str('category')
@@ -195,10 +195,10 @@ class CudfReader(PandasToPandasReader):
                     except KeyError:
                         flg_default_params = False
 
-                    if flg_default_params and\
-                    not np.issubdtype(cat_role.dtype, np.number) and\
-                    np.issubdtype(subsample.dtypes[feat], np.number):
-                        r.dtype=self._get_default_role_from_str('numeric').dtype
+                    if flg_default_params and \
+                            not np.issubdtype(cat_role.dtype, np.number) and \
+                            np.issubdtype(subsample.dtypes[feat], np.number):
+                        r.dtype = self._get_default_role_from_str('numeric').dtype
 
             else:
                 # if no - infer
@@ -215,12 +215,12 @@ class CudfReader(PandasToPandasReader):
             else:
                 self._dropped_features.append(feat)
 
-        assert len(self.used_features) > 0,\
-               'All features are excluded for some reasons'
+        assert len(self.used_features) > 0, \
+            'All features are excluded for some reasons'
 
         folds = set_sklearn_folds(self.task, kwargs['target'],
-                       cv=self.cv, random_state=self.random_state,
-                       group=None if 'group' not in kwargs else kwargs['group'])
+                                  cv=self.cv, random_state=self.random_state,
+                                  group=None if 'group' not in kwargs else kwargs['group'])
 
         if folds is not None:
             kwargs['folds'] = folds
@@ -231,13 +231,13 @@ class CudfReader(PandasToPandasReader):
 
         if self.advanced_roles:
             new_roles = self.advanced_roles_guess(dataset,
-                                            manual_roles=parsed_roles)
+                                                  manual_roles=parsed_roles)
 
-            droplist = [x for x in new_roles if new_roles[x].name == 'Drop' and\
-                                                not self._roles[x].force_input]
+            droplist = [x for x in new_roles if new_roles[x].name == 'Drop' and \
+                        not self._roles[x].force_input]
 
             self.upd_used_features(remove=droplist)
-            self._roles = {x: new_roles[x]\
+            self._roles = {x: new_roles[x] \
                            for x in new_roles if x not in droplist}
             dataset = CudfDataset(train_data[self.used_features],
                                   self.roles, task=self.task, **kwargs)
@@ -270,13 +270,13 @@ class CudfReader(PandasToPandasReader):
 
                 assert srtd.shape[0] > 1, 'Less than 2 unique values in target'
                 if self.task.name == 'binary':
-                    assert srtd.shape[0] == 2,\
-                           'Binary task and more than 2 values in target'
+                    assert srtd.shape[0] == 2, \
+                        'Binary task and more than 2 values in target'
                 return target
 
             # case - create mapping
-            self.class_mapping = {n: x for (x, n)\
-                                       in enumerate(cp.asnumpy(unqiues))}
+            self.class_mapping = {n: x for (x, n) \
+                                  in enumerate(cp.asnumpy(unqiues))}
             return target.map(self.class_mapping).astype(cp.int32)
 
         assert not target.isna().any(), 'Nan in target detected'
@@ -303,7 +303,7 @@ class CudfReader(PandasToPandasReader):
             _ = feature.astype(num_dtype)
             try:
                 _ = feature.dt
-                return DatetimeRole(np.datetime64, date_format = date_format)
+                return DatetimeRole(np.datetime64, date_format=date_format)
             except AttributeError:
                 pass
             return NumericRole(num_dtype)
@@ -311,7 +311,7 @@ class CudfReader(PandasToPandasReader):
             pass
         except TypeError:
             pass
-        
+
         try:
             _ = cast(cudf.Series, cudf.to_datetime(feature, infer_datetime_format=False, format=date_format)).dt
             return DatetimeRole(np.datetime64, date_format=date_format)
@@ -371,7 +371,7 @@ class CudfReader(PandasToPandasReader):
         return dataset
 
     def advanced_roles_guess(self, dataset: CudfDataset,
-                         manual_roles: Optional[RolesDict] = None) -> RolesDict:
+                             manual_roles: Optional[RolesDict] = None) -> RolesDict:
         """Advanced roles guess over user's definition and reader's simple guessing.
 
         Strategy - compute feature's NormalizedGini
@@ -397,10 +397,10 @@ class CudfReader(PandasToPandasReader):
         drop_co = advanced_roles_params.pop('drop_score_co')
         # guess roles nor numerics
         stat = get_numeric_roles_stat_gpu(dataset, manual_roles=manual_roles,
-                                      random_state=self.random_state,
-                                      subsample=self.samples,
-                                      n_jobs=self.n_jobs
-                                      )
+                                          random_state=self.random_state,
+                                          subsample=self.samples,
+                                          n_jobs=self.n_jobs
+                                          )
         if len(stat) > 0:
             # upd stat with rules
 
@@ -410,13 +410,13 @@ class CudfReader(PandasToPandasReader):
 
         # # # guess categories handling type
         stat = get_category_roles_stat_gpu(dataset,
-                                     random_state=self.random_state,
-                                     subsample=self.samples, n_jobs=self.n_jobs)
+                                           random_state=self.random_state,
+                                           subsample=self.samples, n_jobs=self.n_jobs)
         if len(stat) > 0:
             # upd stat with rules
 
             stat = calc_category_rules(stat)
-            new_roles_dict = {**new_roles_dict,\
+            new_roles_dict = {**new_roles_dict, \
                               **rule_based_cat_handler_guess(stat)}
             top_scores.append(stat['max_score'])
 
@@ -425,13 +425,13 @@ class CudfReader(PandasToPandasReader):
             top_scores = pd.concat(top_scores, axis=0)
 
             null_scores = get_null_scores_gpu(dataset, top_scores.index.values,
-                                          random_state=self.random_state,
-                                          subsample=self.samples)
+                                              random_state=self.random_state,
+                                              subsample=self.samples)
             top_scores = pd.concat([null_scores, top_scores], axis=1).max(axis=1)
 
             rejected = list(top_scores[top_scores < drop_co].index.values)
             logger.info('Feats was rejected during automatic roles guess: {0}'.format(rejected))
-            new_roles_dict = {**new_roles_dict,\
+            new_roles_dict = {**new_roles_dict, \
                               **{x: DropRole() for x in rejected}}
         return new_roles_dict
 
