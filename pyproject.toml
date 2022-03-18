@@ -39,7 +39,6 @@ networkx = "*"
 cmaes = "*"
 log-calls = "*"
 pyyaml = "*"
-catboost = "*"
 
 autowoe = ">=1.2"
 

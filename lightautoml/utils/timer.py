@@ -1,20 +1,24 @@
 """Timer."""
 
+import logging
+
 from time import time
-from typing import Optional, List, Union
+from typing import List
+from typing import Optional
+from typing import Union
 
 import numpy as np
-from log_calls import record_history
 
-from .logging import get_logger, DuplicateFilter
+from .logging import DuplicateFilter
 
-logger = get_logger(__name__)
+
+logger = logging.getLogger(__name__)
 logger.addFilter(DuplicateFilter())
 
 
-@record_history(enabled=False)
 class Timer:
     """Timer to limit the duration tasks."""
+
     _timeout = 1e10
     _overhead = 0
     _mode = 1
@@ -24,19 +28,27 @@ class Timer:
 
     @property
     def time_left(self) -> float:
-        return self.timeout - self.time_spent
+        if self.time_spent is not None:
+            return self.timeout - self.time_spent
+        return None
 
     @property
     def time_spent(self) -> float:
-        return time() - self.start_time
+        if self.start_time is not None:
+            return time() - self.start_time
+        return None
 
     @property
     def perc_left(self) -> float:
-        return self.time_left / self.timeout
+        if self.time_left is not None:
+            return self.time_left / self.timeout
+        return None
 
     @property
     def perc_spent(self) -> float:
-        return self.time_spent / self.timeout
+        if self.time_spent is not None:
+            return self.time_spent / self.timeout
+        return None
 
     @property
     def timeout(self) -> float:
@@ -50,21 +62,28 @@ class Timer:
             return self.time_left < 0
 
         if self._mode == 2:
-            return (self.time_left - self._overhead) < 0
+            if self.time_left:
+                return (self.time_left - self._overhead) < 0
+            return None
 
     def start(self):
         self.start_time = time()
         return self
 
 
-@record_history(enabled=False)
 class PipelineTimer(Timer):
     """Timer is used to control time over full automl run.
 
     It decides how much time spend to each algo
     """
 
-    def __init__(self, timeout: Optional[float] = None, overhead: float = .1, mode: int = 1, tuning_rate: float = 0.7):
+    def __init__(
+        self,
+        timeout: Optional[float] = None,
+        overhead: float = 0.1,
+        mode: int = 1,
+        tuning_rate: float = 0.7,
+    ):
         """Create global automl timer.
 
         Args:
@@ -113,11 +132,10 @@ class PipelineTimer(Timer):
 
         return (self.time_left - self._overhead) * (score / self._task_scores)
 
-    def get_task_timer(self, key: Optional[str] = None, score: float = 1.0) -> 'TaskTimer':
+    def get_task_timer(self, key: Optional[str] = None, score: float = 1.0) -> "TaskTimer":
         return TaskTimer(self, key, score, self._rate_overhead, self._mode, self.tuning_rate)
 
 
-@record_history(enabled=False)
 class TaskTimer(Timer):
     """Timer is used to control time over single ML task run.
 
@@ -130,9 +148,15 @@ class TaskTimer(Timer):
         """Check if the task is running."""
         return self.start_time is not None
 
-    def __init__(self, pipe_timer: PipelineTimer, key: Optional[str] = None, score: float = 1.0,
-                 overhead: Optional[float] = 1, mode: int = 1,
-                 default_tuner_time_rate: float = 0.7):
+    def __init__(
+        self,
+        pipe_timer: PipelineTimer,
+        key: Optional[str] = None,
+        score: float = 1.0,
+        overhead: Optional[float] = 1,
+        mode: int = 1,
+        default_tuner_time_rate: float = 0.7,
+    ):
         """
 
 
@@ -258,7 +282,10 @@ class TaskTimer(Timer):
         """
         folds_est = self.estimate_folds_time(n_folds)
         if folds_est is None:
-            return self.default_tuner_rate * self.time_left
+            if self.time_left:
+                return self.default_tuner_rate * self.time_left
+            else:
+                return None
         return self.time_left - folds_est
 
     def time_limit_exceeded(self) -> bool:
@@ -276,7 +303,9 @@ class TaskTimer(Timer):
     def __copy__(self):
 
         proxy_timer = PipelineTimer().start()
-        logger.warning('Copying TaskTimer may affect the parent PipelineTimer, so copy will create new unlimited TaskTimer')
+        logger.warning(
+            "Copying TaskTimer may affect the parent PipelineTimer, so copy will create new unlimited TaskTimer"
+        )
 
         return proxy_timer.get_task_timer(self.key)
 
@@ -284,7 +313,7 @@ class TaskTimer(Timer):
 
         return self.__copy__()
 
-    def split_timer(self, n_parts: int) -> List['TaskTimer']:
+    def split_timer(self, n_parts: int) -> List["TaskTimer"]:
         """Split the timer into equal-sized tasks.
 
         Args:
