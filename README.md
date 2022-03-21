@@ -24,15 +24,15 @@ cd LightAutoML_GPU
 
 3. Install LightAutoML in develop mode:
 ```bash
+pip install poetry
 poetry install
 pip install catboost==1.0.4
 ```
 
 
-5. To install RAPIDS for Python 3.8 and CUDA 11.0 use the following command:
+5. To install RAPIDS for Python 3.8 and CUDA 11.2 use the following command:
 ```bash
-conda install -c rapidsai -c nvidia -c conda-forge \
-    rapids=21.10 python=3.8 cudatoolkit=11.0
+conda install -c rapidsai -c nvidia -c conda-forge rapids=21.10 cudatoolkit=11.2
 pip install dask-ml
 ```
 Please note, if you use NVIDIA GPU Ampere architecture (i.e. Tesla A100 or RTX3000 series), you may need to uninstall pytorch and install it manually 
@@ -43,3 +43,4 @@ pip install torch==1.7.1+cu110 torchvision==0.8.2+cu110 -f https://download.pyto
 ```
 
 Once the RAPIDS is installed, the environment is fully ready. You can activate it using the `source` command and test and implement your own code.
+
