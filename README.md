@@ -32,8 +32,7 @@ pip install catboost==1.0.4
 
 5. To install RAPIDS for Python 3.8 and CUDA 11.2 use the following command:
 ```bash
-conda install -c rapidsai -c nvidia -c conda-forge \
-    rapids=21.10 python=3.8 cudatoolkit=11.2
+conda install -c rapidsai -c nvidia -c conda-forge rapids=21.10 cudatoolkit=11.2
 pip install dask-ml
 ```
 Please note, if you use NVIDIA GPU Ampere architecture (i.e. Tesla A100 or RTX3000 series), you may need to uninstall pytorch and install it manually 
