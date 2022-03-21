@@ -24,6 +24,7 @@ cd LightAutoML_GPU
 
 3. Install LightAutoML in develop mode:
 ```bash
+pip install poetry
 poetry install
 pip install catboost==1.0.4
 ```
