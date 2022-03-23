@@ -233,6 +233,8 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
             Tuple (model, predicted_values)
 
         """
+        train = train.to_cudf()
+        valid = valid.to_cudf()
         st = perf_counter()
         train_target = train.target
         train_weights = train.weights
@@ -271,11 +273,21 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
             else:
                 raise NotImplementedError("given type of input is not implemented:" + str(type(train_target)) + "class:" + str(self._name))
 
-
+        cp.cuda.stream.get_current_stream().synchronize()
         params, num_trees, early_stopping_rounds, verbose_eval, fobj, feval = self._infer_params()
         train_target, train_weight = self.task.losses['xgb'].fw_func(train_target, train_weights)
         valid_target, valid_weight = self.task.losses['xgb'].fw_func(valid_target, valid_weights)
+
+        print(type(train_data))
+        print(type(train_target))
+        print(train_target)
+        print(train_data)
+        import time
+        print("Sleeping")
+        time.sleep(5)
+        print("creating DMatrix...")
         xgb_train = xgb.DMatrix(train_data, label=train_target, weight=train_weight)
+
         xgb_valid = xgb.DMatrix(valid_data, label=valid_target, weight=valid_weight)
         params['gpu_id'] = dev_id
         model = xgb.train(params, xgb_train, num_boost_round=num_trees, evals=[(xgb_train, 'train'), (xgb_valid, 'valid')],

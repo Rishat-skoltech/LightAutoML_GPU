@@ -171,10 +171,12 @@ class LabelEncoder_gpu(LAMLTransformer):
 
         dataset = dataset.to_cudf()
         data = dataset.data
-
         # transform
-        data = self.encode_labels(data).values
-
+        #data = self.encode_labels(data).values
+        data = self.encode_labels(data)
+        data = data.astype(cp.float64)
+        data = data.fillna(cp.nan).values
+        #data
         # create resulted
         output = dataset.empty().to_cupy()
         output.set_data(data, self.features, self._output_role)
@@ -1311,7 +1313,8 @@ class CatIntersections_gpu(LabelEncoder_gpu):
         """
 
         inter_dataset = self._build_df(dataset)
-        return super().transform(inter_dataset)
+        out_df = super().transform(inter_dataset)
+        return out_df
 
 
 class OrdinalEncoder_gpu(LabelEncoder_gpu):

@@ -370,8 +370,6 @@ class BoostCB_gpu(TabularMLAlgo_gpu, ImportanceEstimator):
             train_valid: Classic cv-iterator.
 
         """
-        print("CB:", self.__dict__)
-        print("\tData:", data.__dict__)
         self.fit_predict(train_valid)
 
     def _predict(self, model: cb.CatBoost, pool: cb.Pool, params):
