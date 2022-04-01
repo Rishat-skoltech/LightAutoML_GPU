@@ -278,14 +278,6 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
         train_target, train_weight = self.task.losses['xgb'].fw_func(train_target, train_weights)
         valid_target, valid_weight = self.task.losses['xgb'].fw_func(valid_target, valid_weights)
 
-        print(type(train_data))
-        print(type(train_target))
-        print(train_target)
-        print(train_data)
-        import time
-        print("Sleeping")
-        time.sleep(5)
-        print("creating DMatrix...")
         xgb_train = xgb.DMatrix(train_data, label=train_target, weight=train_weight)
 
         xgb_valid = xgb.DMatrix(valid_data, label=valid_target, weight=valid_weight)
