@@ -10,6 +10,8 @@ from typing import Callable
 from typing import Tuple
 from typing import Dict
 
+import cudf
+import dask_cudf
 import xgboost as xgb
 from xgboost import dask as dxgb
 
@@ -380,8 +382,12 @@ class BoostXGB_dask(BoostXGB):
         print("train weight is", type(train_weight))
         print("dataset is", type(train))
         if type(train) is not DaskCudfDataset:
+            #TODO: fix n_partitions
             train = train.to_daskcudf(nparts=2)
             valid = valid.to_daskcudf(nparts=2)
+
+            train_target = dask_cudf.from_cudf(cudf.Series(train_target), npartitions=2)
+            valid_target = dask_cudf.from_cudf(cudf.Series(valid_target), npartitions=2)
 
 
         print("train data AFTER is", type(train.data))
