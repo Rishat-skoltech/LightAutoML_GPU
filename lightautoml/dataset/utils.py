@@ -13,6 +13,7 @@ from lightautoml.dataset.np_pd_dataset import NumpyDataset
 from lightautoml.dataset.np_pd_dataset import PandasDataset
 from lightautoml.dataset.gpu.gpu_dataset import CupyDataset
 from lightautoml.dataset.gpu.gpu_dataset import CudfDataset
+from lightautoml.dataset.gpu.gpu_dataset import DaskCudfDataset
 from lightautoml.dataset.roles import ColumnRole
 
 
@@ -80,6 +81,9 @@ def get_common_concat(
     elif dataset_types == {CudfDataset, CupyDataset}:
         return cupy_and_cudf_concat, None
 
+    elif dataset_types == {DaskCudfDataset, CupyDataset}:
+        return daskcudf_and_cupy_concat, None
+
     raise TypeError("Unable to concatenate dataset types {0}".format(list(dataset_types)))
 
 
@@ -99,6 +103,24 @@ def cupy_and_cudf_concat(datasets: Sequence[Union[CupyDataset, CudfDataset]]) ->
     datasets = [x.to_cupy() for x in datasets]
 
     return CupyDataset.concat(datasets)
+
+
+def daskcudf_and_cupy_concat(datasets: Sequence[Union[DaskCudfDataset, CupyDataset]]) -> CudfDataset:
+    """Concat of daskcudf and cupy dataset.
+
+        Args:
+            datasets: Sequence of datasets to concatenate.
+
+        Returns:
+            Concatenated dataset.
+
+        """
+    for x in range(datasets):
+        if type(x) is DaskCudfDataset:
+            nparts = len(x.data._divisions) - 1
+    datasets = [x.to_cudf for x in datasets]
+
+    return CudfDataset.concat(datasets).to_daskcudf(nparts=nparts)
 
 
 def numpy_and_pandas_concat(datasets: Sequence[Union[NumpyDataset, PandasDataset]]) -> PandasDataset:
