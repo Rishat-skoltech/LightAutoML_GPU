@@ -378,8 +378,8 @@ class BoostXGB_dask(BoostXGB):
         print("train data is", type(train.data))
         print("dataset is", type(train))
         if type(train) is not DaskCudfDataset:
-            train.data = train.data.to_daskcudf(nparts=2)
-            valid.data = valid.data.to_daskcudf(nparts=2)
+            train = train.to_daskcudf(nparts=2)
+            valid = valid.to_daskcudf(nparts=2)
 
         xgb_train = dxgb.DaskDeviceQuantileDMatrix(self.client, train.data, label=train_target, weight=train_weight)
         xgb_valid = dxgb.DaskDeviceQuantileDMatrix(self.client, valid.data, label=valid_target, weight=valid_weight)
