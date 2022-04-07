@@ -414,6 +414,9 @@ class BoostXGB_dask(BoostXGB):
             Predicted target values.
 
         """
+        if type(dataset) is not DaskCudfDataset:
+            #TODO: fix n_partitions
+            dataset = dataset.to_daskcudf(nparts=2)
         pred = self.task.losses['xgb'].bw_func(dxgb.inplace_predict(self.client, model, dataset.data))
 
         return pred
