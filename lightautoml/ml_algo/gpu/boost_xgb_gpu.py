@@ -376,6 +376,7 @@ class BoostXGB_dask(BoostXGB):
         valid_target, valid_weight = self.task.losses['xgb'].fw_func(valid.target, valid.weights)
 
         print("train data is", type(train.data))
+        print("dataset is", type(train))
 
         xgb_train = dxgb.DaskDeviceQuantileDMatrix(self.client, train.data, label=train_target, weight=train_weight)
         xgb_valid = dxgb.DaskDeviceQuantileDMatrix(self.client, valid.data, label=valid_target, weight=valid_weight)
