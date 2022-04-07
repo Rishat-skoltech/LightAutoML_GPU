@@ -381,6 +381,8 @@ class BoostXGB_dask(BoostXGB):
             train = train.to_daskcudf(nparts=2)
             valid = valid.to_daskcudf(nparts=2)
 
+        print("train data AFTER is", type(train.data))
+
         xgb_train = dxgb.DaskDeviceQuantileDMatrix(self.client, train.data, label=train_target, weight=train_weight)
         xgb_valid = dxgb.DaskDeviceQuantileDMatrix(self.client, valid.data, label=valid_target, weight=valid_weight)
         model = dxgb.train(self.client, params, xgb_train, num_boost_round=num_trees, evals=[(xgb_train, 'train'), (xgb_valid, 'valid')],
