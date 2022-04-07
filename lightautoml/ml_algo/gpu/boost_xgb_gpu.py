@@ -376,10 +376,13 @@ class BoostXGB_dask(BoostXGB):
         valid_target, valid_weight = self.task.losses['xgb'].fw_func(valid.target, valid.weights)
 
         print("train data is", type(train.data))
+        print("train target is", type(train_target))
+        print("train weight is", type(train_weight))
         print("dataset is", type(train))
         if type(train) is not DaskCudfDataset:
             train = train.to_daskcudf(nparts=2)
             valid = valid.to_daskcudf(nparts=2)
+
 
         print("train data AFTER is", type(train.data))
 
