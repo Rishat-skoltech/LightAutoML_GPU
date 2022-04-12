@@ -205,6 +205,7 @@ class TabularAutoML_gpu(TabularAutoML):
             self.cb_params["default_params"]["task_type"] = "GPU"
             self.cb_params["default_params"]["devices"] = cur_gpu_ids.replace(",", ":")
             self.cb_params["gpu_ids"] = cur_gpu_ids.split(",")
+            print(self.cb_params)
             
         if self.task.device == 'gpu' or self.xgb_params["parallel_folds"]:
             gpu_cnt = 1
@@ -538,6 +539,8 @@ class TabularAutoML_gpu(TabularAutoML):
             roles = {**roles, **upd_roles}
         if valid_data is not None:
             data, _ = read_data(valid_data, valid_features, self.cpu_limit, self.read_csv_params)
+
+        print("########DATA TYPE AFTER READER IS:", type(data))
 
         oof_pred = super(TabularAutoML_gpu.__bases__[0], self).fit_predict(train, roles=roles, cv_iter=cv_iter, valid_data=valid_data, verbose=verbose)
 
