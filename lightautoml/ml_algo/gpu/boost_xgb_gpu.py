@@ -14,6 +14,7 @@ import cudf
 import dask_cudf
 import xgboost as xgb
 from xgboost import dask as dxgb
+import torch
 
 import numpy as np
 import pandas as pd
@@ -382,20 +383,20 @@ class BoostXGB_dask(BoostXGB):
         print("train weight is", type(train_weight))
         print("dataset is", type(train))
         if type(train) is not DaskCudfDataset:
-            #TODO: fix n_partitions
-            train = train.to_daskcudf(nparts=2)
-            valid = valid.to_daskcudf(nparts=2)
+            train = train.to_daskcudf(nparts=torch.cuda.device_count())
+            valid = valid.to_daskcudf(nparts=torch.cuda.device_count())
 
-            train_target = dask_cudf.from_cudf(cudf.Series(train_target), npartitions=2)
-            valid_target = dask_cudf.from_cudf(cudf.Series(valid_target), npartitions=2)
+            train_target = dask_cudf.from_cudf(cudf.Series(train_target), npartitions=torch.cuda.device_count())
+            valid_target = dask_cudf.from_cudf(cudf.Series(valid_target), npartitions=torch.cuda.device_count())
 
 
         print("train data AFTER is", type(train.data))
         train.data.compute().to_csv('debug.csv')
-        exit(0)
+        #exit(0)
 
         xgb_train = dxgb.DaskDeviceQuantileDMatrix(self.client, train.data, label=train_target, weight=train_weight)
         xgb_valid = dxgb.DaskDeviceQuantileDMatrix(self.client, valid.data, label=valid_target, weight=valid_weight)
+        print("Start fitting", flush=True)
         model = dxgb.train(self.client, params, xgb_train, num_boost_round=num_trees, evals=[(xgb_train, 'train'), (xgb_valid, 'valid')],
                           obj=fobj, feval=feval, early_stopping_rounds=early_stopping_rounds, verbose_eval=verbose_eval
                           )
@@ -403,6 +404,7 @@ class BoostXGB_dask(BoostXGB):
         val_pred = dxgb.inplace_predict(self.client, model, valid.data)
         val_pred = self.task.losses['xgb'].bw_func(val_pred)
 
+        print("Finish fitting", flush=True)
         return model, val_pred
 
     def predict_single_fold(self, model: dxgb.Booster, dataset: TabularDatasetGpu) -> np.ndarray:
