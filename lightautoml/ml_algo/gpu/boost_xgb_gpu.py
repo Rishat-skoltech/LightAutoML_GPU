@@ -391,6 +391,8 @@ class BoostXGB_dask(BoostXGB):
 
 
         print("train data AFTER is", type(train.data))
+        train.data.compute().to_csv('debug.csv')
+        exit(0)
 
         xgb_train = dxgb.DaskDeviceQuantileDMatrix(self.client, train.data, label=train_target, weight=train_weight)
         xgb_valid = dxgb.DaskDeviceQuantileDMatrix(self.client, valid.data, label=valid_target, weight=valid_weight)
