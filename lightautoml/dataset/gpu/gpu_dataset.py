@@ -75,6 +75,7 @@ class CupyDataset(NumpyDataset):
                 - dict.
 
         """
+        print("Cupy dataset called!")
         self._initialize(task, **kwargs)
         for k in kwargs:
             self.__dict__[k] = cp.asarray(kwargs[k])
