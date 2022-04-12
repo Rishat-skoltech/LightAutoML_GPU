@@ -194,6 +194,8 @@ class HybridReader(CudfReader):
 
 
         self.final_roles.update({self.target: 'target'})
+
+        print("self output is", self.output, flush=True)
         if self.output == 'gpu':
             self.final_reader = CudfReader(self.task, 0, *self.args, **self.params, n_jobs = self.n_jobs, advanced_roles=False)
         elif self.output == 'cpu':
