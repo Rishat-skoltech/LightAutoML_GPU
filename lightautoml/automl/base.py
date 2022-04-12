@@ -186,6 +186,8 @@ class AutoML:
         self.timer.start()
         train_dataset = self.reader.fit_read(train_data, train_features, roles)
 
+        print("########DATA TYPE AFTER READER (grandparent) IS:", type(train_dataset), flush=True)
+
         assert (
             len(self._levels) <= 1 or train_dataset.folds is not None
         ), "Not possible to fit more than 1 level without cv folds"
