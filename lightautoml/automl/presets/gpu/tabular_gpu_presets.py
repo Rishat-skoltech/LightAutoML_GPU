@@ -539,7 +539,7 @@ class TabularAutoML_gpu(TabularAutoML):
         if valid_data is not None:
             data, _ = read_data(valid_data, valid_features, self.cpu_limit, self.read_csv_params)
 
-        print("########DATA TYPE AFTER READER IS:", type(train))
+        print("########DATA TYPE AFTER READER IS:", type(train), flush=True)
 
         oof_pred = super(TabularAutoML_gpu.__bases__[0], self).fit_predict(train, roles=roles, cv_iter=cv_iter, valid_data=valid_data, verbose=verbose)
 
