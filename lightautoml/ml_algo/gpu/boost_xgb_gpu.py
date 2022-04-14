@@ -10,6 +10,8 @@ from typing import Callable
 from typing import Tuple
 from typing import Dict
 
+from torch.cuda import device_count
+
 import cudf
 import dask_cudf
 import xgboost as xgb
@@ -31,6 +33,7 @@ from lightautoml.ml_algo.tuning.base import SearchSpace
 
 logger = logging.getLogger(__name__)
 
+
 class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
     """Gradient boosting on decision trees from LightGBM library.
 
@@ -49,8 +52,8 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
     _name: str = 'XGB'
 
     _default_params = {
-        'tree_method':'gpu_hist',
-        'predictor':'gpu_predictor',
+        'tree_method': 'gpu_hist',
+        'predictor': 'gpu_predictor',
         'task': 'train',
         "learning_rate": 0.05,
         "max_leaves": 128,
@@ -90,6 +93,7 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
         # get objective params
         loss = self.task.losses['xgb']
         params['objective'] = loss.fobj_name
+        print("OBJECTIVE:", loss.f_obj_name, flush=True)
         fobj = loss.fobj
 
         # get metric params
@@ -191,7 +195,6 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
         """
         optimization_search_space = {}
 
-
         optimization_search_space['max_depth'] = SearchSpace(
             Distribution.INTUNIFORM,
             low=3,
@@ -225,7 +228,8 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
 
         return optimization_search_space
 
-    def fit_predict_single_fold(self, train: TabularDatasetGpu, valid: TabularDatasetGpu, dev_id: int = 0) -> Tuple[xgb.Booster, np.ndarray]:
+    def fit_predict_single_fold(self, train: TabularDatasetGpu, valid: TabularDatasetGpu, dev_id: int = 0) -> Tuple[
+        xgb.Booster, np.ndarray]:
         """Implements training and prediction on single fold.
 
         Args:
@@ -274,7 +278,8 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
                 train_data = cp.copy(train_data)
                 valid_data = cp.copy(valid_data)
             else:
-                raise NotImplementedError("given type of input is not implemented:" + str(type(train_target)) + "class:" + str(self._name))
+                raise NotImplementedError(
+                    "given type of input is not implemented:" + str(type(train_target)) + "class:" + str(self._name))
 
         cp.cuda.stream.get_current_stream().synchronize()
         params, num_trees, early_stopping_rounds, verbose_eval, fobj, feval = self._infer_params()
@@ -323,7 +328,7 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
 
         """
 
-        #FIRST SORT TO FEATURES AND THEN SORT BACK TO IMPORTANCES - BAD
+        # FIRST SORT TO FEATURES AND THEN SORT BACK TO IMPORTANCES - BAD
         imp = 0
         for model in self.models:
             val = model.get_score(importance_type='gain')
@@ -332,7 +337,7 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
             imp = imp + scores
 
         imp = imp / len(self.models)
-        
+
         return pd.Series(imp, index=self.features).sort_values(ascending=False)
 
     def fit(self, train_valid: TrainValidIterator):
@@ -343,25 +348,27 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
 
         """
         self.fit_predict(train_valid)
-        
+
+
 class BoostXGB_dask(BoostXGB):
 
     def __init__(self, client, *args, **kwargs):
 
         self.client = client
         super().__init__(*args, **kwargs)
-        
+
     def __deepcopy__(self, memo):
 
         new_inst = type(self).__new__(self.__class__)
         new_inst.client = self.client
-        
-        for k,v in super().__dict__.items():
+
+        for k, v in super().__dict__.items():
             if k != 'client':
                 setattr(new_inst, k, deepcopy(v, memo))
         return new_inst
-        
-    def fit_predict_single_fold(self, train: DaskCudfDataset, valid: DaskCudfDataset, dev_id: int = 0) -> Tuple[dxgb.Booster, np.ndarray]:
+
+    def fit_predict_single_fold(self, train: DaskCudfDataset, valid: DaskCudfDataset, dev_id: int = 0) -> Tuple[
+        dxgb.Booster, np.ndarray]:
         """Implements training and prediction on single fold.
 
         Args:
@@ -374,6 +381,8 @@ class BoostXGB_dask(BoostXGB):
         """
 
         params, num_trees, early_stopping_rounds, verbose_eval, fobj, feval = self._infer_params()
+
+        print(self._infer_params())
 
         train_target, train_weight = self.task.losses['xgb'].fw_func(train.target, train.weights)
         valid_target, valid_weight = self.task.losses['xgb'].fw_func(valid.target, valid.weights)
@@ -389,17 +398,19 @@ class BoostXGB_dask(BoostXGB):
             train_target = dask_cudf.from_cudf(cudf.Series(train_target), npartitions=torch.cuda.device_count())
             valid_target = dask_cudf.from_cudf(cudf.Series(valid_target), npartitions=torch.cuda.device_count())
 
-
         print("train data AFTER is", type(train.data))
         train.data.compute().to_csv('debug.csv')
-        #exit(0)
+        # exit(0)
 
         xgb_train = dxgb.DaskDeviceQuantileDMatrix(self.client, train.data, label=train_target, weight=train_weight)
         xgb_valid = dxgb.DaskDeviceQuantileDMatrix(self.client, valid.data, label=valid_target, weight=valid_weight)
         print("Start fitting", flush=True)
-        model = dxgb.train(self.client, params, xgb_train, num_boost_round=num_trees, evals=[(xgb_train, 'train'), (xgb_valid, 'valid')],
-                          obj=fobj, feval=feval, early_stopping_rounds=early_stopping_rounds, verbose_eval=verbose_eval
-                          )
+        print("Params are:", params)
+        print("Num trees are:", num_trees)
+        model = dxgb.train(self.client, params, xgb_train, num_boost_round=num_trees,
+                           evals=[(xgb_train, 'train'), (xgb_valid, 'valid')],
+                           obj=fobj, feval=feval, early_stopping_rounds=early_stopping_rounds, verbose_eval=verbose_eval
+                           )
 
         val_pred = dxgb.inplace_predict(self.client, model, valid.data)
         val_pred = self.task.losses['xgb'].bw_func(val_pred)
@@ -419,8 +430,7 @@ class BoostXGB_dask(BoostXGB):
 
         """
         if type(dataset) is not DaskCudfDataset:
-            #TODO: fix n_partitions
-            dataset = dataset.to_daskcudf(nparts=2)
+            dataset = dataset.to_daskcudf(nparts=device_count())
         pred = self.task.losses['xgb'].bw_func(dxgb.inplace_predict(self.client, model, dataset.data))
 
         return pred
@@ -433,7 +443,7 @@ class BoostXGB_dask(BoostXGB):
 
         """
 
-        #FIRST SORT TO FEATURES AND THEN SORT BACK TO IMPORTANCES - BAD
+        # FIRST SORT TO FEATURES AND THEN SORT BACK TO IMPORTANCES - BAD
         imp = 0
         for model in self.models:
             val = model['booster'].get_score(importance_type='gain')
@@ -442,6 +452,5 @@ class BoostXGB_dask(BoostXGB):
             imp = imp + scores
 
         imp = imp / len(self.models)
-        
-        return pd.Series(imp, index=self.features).sort_values(ascending=False)
 
+        return pd.Series(imp, index=self.features).sort_values(ascending=False)
