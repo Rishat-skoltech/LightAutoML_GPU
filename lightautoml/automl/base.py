@@ -9,6 +9,8 @@ from typing import List
 from typing import Optional
 from typing import Sequence
 
+from torch.cuda import device_count
+
 from ..dataset.base import LAMLDataset
 from ..dataset.utils import concatenate
 from ..pipelines.ml.base import MLPipeline
@@ -198,7 +200,16 @@ class AutoML:
         if valid_data is not None:
             valid_dataset = self.reader.read(valid_data, valid_features, add_array_attrs=True)
 
+        if self.task.device == 'mgpu':
+            train_dataset = train_dataset.to_daskcudf(nparts=device_count())
+            if valid_dataset is not None:
+                valid_dataset = valid_dataset.to_daskcudf(nparts=device_count())
+        
+        print(f"Train dataset: data_len is {len(train_dataset.data)}, target_len is {len(train_dataset.target)}")
+        #print(f"Val dataset: data_len is {len(valid_dataset.data)}, target_len is {len(valid_dataset.target)}")
+
         train_valid = create_validation_iterator(train_dataset, valid_dataset, n_folds=None, cv_iter=cv_iter)
+        
         # for pycharm)
         level_predictions = None
         pipes = None
@@ -290,11 +301,17 @@ class AutoML:
         """
 
         dataset = self.reader.read(data, features_names=features_names, add_array_attrs=False)
+        if self.task.device == 'mgpu':
+            dataset = dataset.to_daskcudf(nparts=device_count())
+            
+        print("Dataset type is", type(dataset))
+        print("Dataset shape is", dataset.data.shape)
         for n, level in enumerate(self.levels, 1):
             # check if last level
 
             level_predictions = []
             for _n, ml_pipe in enumerate(level):
+                print(ml_pipe.__dict__)
                 level_predictions.append(ml_pipe.predict(dataset))
 
             if n != len(self.levels):

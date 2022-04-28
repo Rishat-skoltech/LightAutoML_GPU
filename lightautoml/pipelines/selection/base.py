@@ -207,7 +207,7 @@ class SelectionPipeline:
             if roles[col].force_input:
                 if col not in sl_set:
                     selected_features.append(col)
-
+        
         return dataset[:, self.selected_features]
 
     def map_raw_feature_importances(self, raw_importances: Series):
@@ -249,6 +249,36 @@ class EmptySelector(SelectionPipeline):
 
         """
         self._selected_features = train_valid.features
+        print("Selected features are:", self._selected_features)
+        
+    
+    def select(self, dataset: LAMLDataset) -> LAMLDataset:
+        """Takes only selected features from giving dataset and creates new dataset.
+
+        Args:
+            dataset: Dataset for feature selection.
+
+        Returns:
+            New dataset with selected features only.
+
+        """
+        selected_features = copy(self.selected_features)
+        # Add features that forces input
+        sl_set = set(selected_features)
+        roles = dataset.roles
+        for col in (x for x in dataset.features if x not in sl_set):
+            if roles[col].force_input:
+                if col not in sl_set:
+                    selected_features.append(col)
+        
+        
+        print("Empty selector Features:", len(self.selected_features))
+        print("Self features:", self.selected_features)
+        print("Dataset features:", dataset.features)
+        out = dataset[:, self.selected_features]
+        print("Empty Selector:", out.data.shape)
+        return out
+    
 
 
 class PredefinedSelector(SelectionPipeline):

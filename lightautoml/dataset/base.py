@@ -462,6 +462,11 @@ class LAMLDataset:
 
         data = cls._hstack(data)
         dataset.set_data(data, features, roles)
+        
+        print("Concat called!")
+        
+        print(dataset.data.shape)
+       
 
         return dataset
 

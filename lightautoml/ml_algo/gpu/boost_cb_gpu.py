@@ -257,8 +257,8 @@ class BoostCB_gpu(TabularMLAlgo_gpu, ImportanceEstimator):
             self._text_features = get_columns_by_role(dataset, 'Text')
         self._text_features = self._text_features if self._text_features else None
 
-        dataset = dataset.to_pandas()
-        data = dataset.data
+        dataset_ = dataset.to_pandas()
+        data = dataset_.data
         dtypes = data.dtypes.to_dict()
         if self._le_cat_features:
             dtypes = {**dtypes, **{x: 'int' for x in self._le_cat_features}}
@@ -271,16 +271,18 @@ class BoostCB_gpu(TabularMLAlgo_gpu, ImportanceEstimator):
             # copy was made in prev astype
             data.astype({x: 'category' for x in self._le_cat_features}, copy=False)
 
-        if dataset.target is not None:
-            target, weights = self.task.losses['cb'].fw_func(dataset.target, dataset.weights)
+        if dataset_.target is not None:
+            target, weights = self.task.losses['cb'].fw_func(dataset_.target, dataset_.weights)
         else:
-            target, weights = dataset.target, dataset.weights
+            target, weights = dataset_.target, dataset_.weights
+            
+        print(f"Catboost: data length is {data.shape}, target is {len(target)}")
 
         pool = cb.Pool(
             data,
             label=target,
             weight=weights,
-            feature_names=dataset.features,
+            feature_names=dataset_.features,
             cat_features=self._le_cat_features,
             text_features=self._text_features
         )
@@ -370,8 +372,6 @@ class BoostCB_gpu(TabularMLAlgo_gpu, ImportanceEstimator):
             train_valid: Classic cv-iterator.
 
         """
-        print("CB:", self.__dict__)
-        print("\tData:", data.__dict__)
         self.fit_predict(train_valid)
 
     def _predict(self, model: cb.CatBoost, pool: cb.Pool, params):

@@ -295,7 +295,7 @@ class TorchBasedLinearEstimator:
         data_cat: Optional[torch.Tensor],
         y: torch.Tensor = None,
         weights: Optional[torch.Tensor] = None,
-        c: float = 1
+        c: float = 1.
     ):
         """Optimize single model.
 
@@ -323,7 +323,13 @@ class TorchBasedLinearEstimator:
         def closure():
             opt.zero_grad()
             output = self.model(data, data_cat)
-            loss = self._loss_fn(y, output, weights, c)
+            #print(output.device)
+            #print(y.device)
+            if weights is not None:
+                print(weights.device)
+            #print(c.device)
+            loss = self._loss_fn(y, output, weights, c).cuda()
+            #print(loss.item())
             if loss.requires_grad:
                 loss.backward()
             results.append(loss.item())
@@ -357,8 +363,10 @@ class TorchBasedLinearEstimator:
             n = weights.sum()
 
         all_params = torch.cat([y.view(-1) for (x, y) in self.model.named_parameters() if x != 'bias'])
+        #print("AP device:", all_params.device)
         penalty = torch.norm(all_params, 2).pow(2) / 2 / n
-        return loss + .5 * penalty / c
+        #print("Penalty device:", penalty.device)
+        return loss + .5/c * penalty
 
     def fit(
         self,

@@ -62,6 +62,7 @@ class TabularMLAlgo_gpu(TabularMLAlgo):
 
         self.task = train_valid_iterator.train.task
         val_data = train_valid_iterator.get_validation_data().empty()
+        print("casting val_data to cupy")
         preds_ds = cast(CupyDataset, val_data.to_cupy())
         outp_dim = 1
 
