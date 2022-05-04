@@ -276,8 +276,10 @@ class BoostCB_gpu(TabularMLAlgo_gpu, ImportanceEstimator):
         else:
             target, weights = dataset_.target, dataset_.weights
             
-        print(f"Catboost: data length is {data.shape}, target is {len(target)}")
-
+        try:
+            print(f"Catboost: data length is {data.shape}, target is {len(target)}")
+        except:
+            pass
         pool = cb.Pool(
             data,
             label=target,

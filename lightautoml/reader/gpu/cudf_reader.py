@@ -33,12 +33,13 @@ from lightautoml.dataset.utils import roles_parser
 from lightautoml.tasks import Task
 from lightautoml.reader.guess_roles import calc_encoding_rules
 from lightautoml.reader.guess_roles import calc_category_rules
-from lightautoml.reader.guess_roles import rule_based_roles_guess
+
 from lightautoml.reader.guess_roles import rule_based_cat_handler_guess
+from .guess_roles_gpu import rule_based_roles_guess_gpu
 from .guess_roles_gpu import get_numeric_roles_stat_gpu
 from .guess_roles_gpu import get_category_roles_stat_gpu
 from .guess_roles_gpu import get_null_scores_gpu
-from lightautoml.reader.utils import set_sklearn_folds
+from .utils_gpu import set_sklearn_folds_gpu
 from lightautoml.reader.base import PandasToPandasReader
 
 from time import perf_counter
@@ -218,7 +219,7 @@ class CudfReader(PandasToPandasReader):
         assert len(self.used_features) > 0, \
             'All features are excluded for some reasons'
 
-        folds = set_sklearn_folds(self.task, kwargs['target'],
+        folds = set_sklearn_folds_gpu(self.task, kwargs['target'],
                                   cv=self.cv, random_state=self.random_state,
                                   group=None if 'group' not in kwargs else kwargs['group'])
 
@@ -405,7 +406,7 @@ class CudfReader(PandasToPandasReader):
             # upd stat with rules
 
             stat = calc_encoding_rules(stat, **advanced_roles_params)
-            new_roles_dict = {**new_roles_dict, **rule_based_roles_guess(stat)}
+            new_roles_dict = {**new_roles_dict, **rule_based_roles_guess_gpu(stat)}
             top_scores.append(stat['max_score'])
 
         # # # guess categories handling type
@@ -422,11 +423,11 @@ class CudfReader(PandasToPandasReader):
 
         # # get top scores of feature
         if len(top_scores) > 0:
-            top_scores = pd.concat(top_scores, axis=0)
+            top_scores = cudf.concat(top_scores, axis=0).to_pandas()
 
             null_scores = get_null_scores_gpu(dataset, top_scores.index.values,
                                               random_state=self.random_state,
-                                              subsample=self.samples)
+                                              subsample=self.samples).to_pandas()
             top_scores = pd.concat([null_scores, top_scores], axis=1).max(axis=1)
 
             rejected = list(top_scores[top_scores < drop_co].index.values)

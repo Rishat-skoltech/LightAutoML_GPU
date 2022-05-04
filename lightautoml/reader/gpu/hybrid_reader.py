@@ -177,7 +177,6 @@ class HybridReader(CudfReader):
         if num_readers > 1:
             with Parallel(n_jobs=num_readers, prefer='processes',
                           backend='loky', max_nbytes=None) as p:
-            #with Parallel(n_jobs=num_readers, prefer='threads', max_nbytes=None) as p:
                 output = p(delayed(call_reader)(reader, train_data[name], target=train_data[self.target]) for (reader, name) in zip(readers, names))
         else:
             output.append(call_reader(readers[0], train_data[names[0]], target=train_data[self.target]))
