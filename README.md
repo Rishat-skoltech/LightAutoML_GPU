@@ -24,8 +24,7 @@ cd LightAutoML_GPU
 
 3. Install LightAutoML in develop mode:
 ```bash
-pip install poetry
-poetry install
+pip install .
 pip install catboost==1.0.4
 ```
 
@@ -35,6 +34,9 @@ pip install catboost==1.0.4
 conda install -c rapidsai -c nvidia -c conda-forge rapids=22.02 cudatoolkit=11.0
 pip install dask-ml
 ```
+
+After you change the library code, you need to re-install the library (```pip uninstall lightautoml```). You need to go to LightAutoML directory and then install it once again, calling ```pip install .```
+
 Please note, if you use NVIDIA GPU Ampere architecture (i.e. Tesla A100 or RTX3000 series), you may need to uninstall pytorch and install it manually 
 due to compatibility issues. To do so, run following commands:
 ```bash
