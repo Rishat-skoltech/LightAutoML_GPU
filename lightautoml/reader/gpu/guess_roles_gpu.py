@@ -29,7 +29,6 @@ from lightautoml.transformers.gpu.numeric_gpu import QuantileBinning_gpu
 from joblib import Parallel, delayed
 from time import perf_counter
 
-import torch
 from lightautoml.dataset.roles import CategoryRole
 from lightautoml.dataset.roles import ColumnRole
 from lightautoml.dataset.roles import NumericRole
@@ -53,9 +52,6 @@ def ginic_gpu(actual: GpuFrame, pred: GpuFrame) -> float:
     n = actual.shape[0]
     a_s = actual[cp.argsort(pred)]
     a_c = a_s.cumsum()
-    #print("n", n)
-    #print("a_c", a_c)
-    #print("a_s", a_s)
     gini_sum = a_c.sum() / a_s.sum() - (n + 1) / 2.0
     return gini_sum / n
 
@@ -77,9 +73,7 @@ def ginic_gpu_new(actual: GpuFrame, pred: GpuFrame, empty_slice) -> float:
     a_s = cp.take_along_axis(actual, ids, axis=0)
 
     a_c = a_s.cumsum(axis=0)
-    #print("n", n)
-    #print("a_c", a_c)
-    #print("a_s", a_s)
+
     a_c[cp.take_along_axis(empty_slice, ids, axis=0)] = 0
     gini_sum = a_c.sum(axis=0) / a_s.sum(axis=0) - (n + 1) / 2.0
     return gini_sum / n
@@ -129,25 +123,18 @@ def gini_normalized_gpu(y: GpuFrame, target: GpuFrame,
         Gini value.
 
     """
-    #print("y = ", y)
-    #print("target = ", target)
-    #print("empty_slice = ", empty_slice)
+
     if empty_slice is None:
         empty_slice = cp.isnan(y)
     all_true = empty_slice.all()
     if all_true:
         return 0.0
-    #print(" === gini_normalized_gpu === ")
-    #print("y.shape = ", y.shape)
-    #print("target.shape = ", target.shape)
+
     sl = ~empty_slice
 
     outp_size = 1 if target.ndim <= 1 else target.shape[1]
     pred_size = 1 if y.ndim <= 1 else y.shape[1]
-    #print("pred_size = ", pred_size)
-    #print("outp_size = ", outp_size)
-    #assert pred_size in (1, outp_size),\
-    #       'Shape missmatch. Only calculate NxM vs NxM or Nx1 vs NxM'
+
     ginis = cp.zeros((outp_size,), dtype=cp.float32)
 
     for i in range(outp_size):
@@ -193,10 +180,6 @@ def gini_normalized_gpu_new(y: GpuFrame, target: GpuFrame,
 
     outp_size = 1 if target.ndim <= 1 else target.shape[1]
     pred_size = 1 if y.ndim <= 1 else y.shape[1]
-    #print("pred_size = ", pred_size)
-    #print("outp_size = ", outp_size)
-    #assert pred_size in (1, outp_size),\
-    #       'Shape missmatch. Only calculate NxM vs NxM or Nx1 vs NxM'
 
     index_i = cp.arange(pred_size, dtype=cp.int32)
     index_i = cp.repeat(index_i, outp_size)
@@ -214,13 +197,8 @@ def gini_normalized_gpu_new(y: GpuFrame, target: GpuFrame,
     row_col_const = 20000000
     batch_size = row_col_const//yt_new.shape[0]
 
-    #batch_size = yt_new.shape[1]
-    #print("batch size", batch_size)
-    #print("count rows", yt_new.shape)
-    #print("yt_new.type", yt_new.dtype)
-    #print("yp_new.type", yp_new.dtype)
     ginis_new = []
-    #print("count iter = ", (index_j.shape[0]//batch_size)+1)
+
     for i in range((index_j.shape[0]//batch_size)+1):
         end = min((i + 1) * batch_size, index_j.shape[0])
         ginis_new.append(
@@ -255,7 +233,6 @@ def get_target_and_encoder_gpu(train: GpuDataset) -> Tuple[Any, type]:
         encoder = MultiClassTargetEncoder_gpu
     else:
         encoder = TargetEncoder_gpu
-    # print("type target, encoder = ", type(target), " ", type(encoder))
     return target, encoder
 
 def calc_ginis_gpu(data: Union[GpuFrame, cp.ndarray],
@@ -292,21 +269,7 @@ def calc_ginis_gpu(data: Union[GpuFrame, cp.ndarray],
     sl = empty_slice[:, ind]
 
     scores = gini_normalized_gpu_new(data, target, sl)
-    """
-    for i in range(new_len):
-        sl = None
-        if empty_slice is not None:
-            ind = int(i/len_ratio)
-            #print("IND = ", ind)
-            sl = empty_slice[:, ind]
 
-        scores[i] = gini_normalized_gpu(data[:,i], target,
-                                        empty_slice=sl)
-    #print("scores", scores)
-    #print("ret", ret)
-    #print(cp.array_equal(scores, ret))
-    assert cp.array_equal(scores, ret)
-    """
     if len_ratio!=1:
         
         scores = scores.reshape((orig_len, len_ratio))
@@ -334,9 +297,7 @@ def _get_score_from_pipe_gpu(train: GpuDataset, target: GpuDataset,
         train = pipe.fit_transform(train)
 
     data = train.data
-    torch.cuda.nvtx.range_push("[_get_score_from_pipe_gpu]: calc_ginis_gpu")
     scores = calc_ginis_gpu(data, target, empty_slice)
-    torch.cuda.nvtx.range_pop()
     return scores
 
 def rule_based_roles_guess_gpu(stat: cudf.DataFrame) -> Dict[str, ColumnRole]:
@@ -424,12 +385,11 @@ def get_score_from_pipe_gpu(train: GpuDataset, target: GpuDataset,
     n_jobs = len(idx)
 
     names = [[train.features[x] for x in y] for y in idx]
-    torch.cuda.nvtx.range_push("[get_score_from_pipe_gpu]: Parallel")
+
     with Parallel(n_jobs=n_jobs, prefer='processes', backend='loky', max_nbytes=None) as p:
         res = p(
             delayed(_get_score_from_pipe_gpu)(train[:, name], target, pipe,
                                            empty_slice[name]) for name in names)
-    torch.cuda.nvtx.range_pop()
     return cp.concatenate(list(map(cp.array, res)))
 
 
@@ -484,25 +444,19 @@ def get_numeric_roles_stat_gpu(train: GpuDataset,
         idx = cp.random.RandomState(random_state).permutation(train_len)[:subsample]
         train = train[idx]
         train_len = subsample
-    torch.cuda.nvtx.range_push("[get_numeric_roles_stat_gpu]: get_target_and_encoder_gpu")
     target, encoder = get_target_and_encoder_gpu(train)
-    torch.cuda.nvtx.range_pop()
     empty_slice = train.data.isna()
     # check scores as is
 
-    torch.cuda.nvtx.range_push("[get_numeric_roles_stat_gpu]: get_score_from_pipe_gpu")
     res['raw_scores'] = get_score_from_pipe_gpu(train, target,
                                          empty_slice=empty_slice, n_jobs=n_jobs)
-    torch.cuda.nvtx.range_pop()
+
     # check unique values
-    torch.cuda.nvtx.range_push("[get_numeric_roles_stat_gpu]: <transfer memory>")
     unique_values = None
     top_freq_values = None
     ## transfer memory
     if isinstance(train.data, cudf.DataFrame):
-        #unique_values = [train.data[x].dropna().value_counts() for x in train.data.columns]
-        #top_freq_values = [x.max() for x in unique_values]
-        #unique_values = [x.shape[0] for x in unique_values]
+
         desc = train.data.nans_to_nulls().astype(object).describe(include='all')
         unique_values = desc.loc['unique'].astype(cp.int32).values[0]
         top_freq_values = desc.loc['freq'].astype(cp.int32).values[0]
@@ -511,31 +465,28 @@ def get_numeric_roles_stat_gpu(train: GpuDataset,
     res['unique'] = unique_values
     res['top_freq_values'] = top_freq_values
     res['unique_rate'] = res['unique'] / train_len
-    torch.cuda.nvtx.range_pop()
+
     # check binned categorical score
     trf = SequentialTransformer([QuantileBinning_gpu(), encoder()])
-    torch.cuda.nvtx.range_push("[get_numeric_roles_stat_gpu]: get_score_from_pipe_gpu(QuantileBinning_gpu)")
+
     res['binned_scores'] = get_score_from_pipe_gpu(train, target, pipe=trf,
                                                    empty_slice=empty_slice, n_jobs=n_jobs)
-    torch.cuda.nvtx.range_pop()
     # check label encoded scores
     trf = SequentialTransformer([ChangeRoles(CategoryRole(np.float32)),
                                  LabelEncoder_gpu(), encoder()])
-    torch.cuda.nvtx.range_push("[get_numeric_roles_stat_gpu]: get_score_from_pipe_gpu(ChangeRoles, LabelEncoder_gpu)")
+
     res['encoded_scores'] = get_score_from_pipe_gpu(train, target, pipe=trf,
                                                    empty_slice=empty_slice, n_jobs=n_jobs)
-    torch.cuda.nvtx.range_pop()
     # check frequency encoding
     trf = SequentialTransformer([ChangeRoles(CategoryRole(np.float32)), FreqEncoder_gpu()])
-    torch.cuda.nvtx.range_push("[get_numeric_roles_stat_gpu]: get_score_from_pipe_gpu(ChangeRoles, FreqEncoder_gpu")
+
     res['freq_scores'] = get_score_from_pipe_gpu(train, target, pipe=trf,
                                                    empty_slice=empty_slice, n_jobs=n_jobs)
-    torch.cuda.nvtx.range_pop()
+
     if isinstance(empty_slice, cudf.DataFrame):
         res['nan_rate'] = empty_slice.mean(axis=0).values_host
     else:
         raise NotImplementedError
-    # print("get_numeric_roles_stat_gpu type res = ", type(res))
     return res
 
 
@@ -571,11 +522,10 @@ def get_category_roles_stat_gpu(train: GpuDataset,
 
     res = cudf.DataFrame(columns=['unique', 'top_freq_values', 'dtype', 'encoded_scores',
                          'freq_scores'], index=roles_to_identify)
-
-    res['dtype'] = dtypes
+    # res['dtype'] = dtypes
 
     if len(roles_to_identify) == 0:
-        return res
+        return res, dtypes
 
     train = train[:, roles_to_identify]
     train_len = train.shape[0]
@@ -604,8 +554,7 @@ def get_category_roles_stat_gpu(train: GpuDataset,
     trf = OrdinalEncoder_gpu()
     res['ord_scores'] = get_score_from_pipe_gpu(train, target, pipe=trf,
                                                   empty_slice=empty_slice, n_jobs=n_jobs)
-    # print("get_category_roles_stat_gpu type res = ", type(res))
-    return res
+    return res, dtypes
 
 
 def get_null_scores_gpu(train: GpuDataset, feats: Optional[List[str]] = None,

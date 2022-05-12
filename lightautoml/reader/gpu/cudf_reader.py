@@ -410,15 +410,16 @@ class CudfReader(PandasToPandasReader):
             top_scores.append(stat['max_score'])
 
         # # # guess categories handling type
-        stat = get_category_roles_stat_gpu(dataset,
+        stat, dtypes = get_category_roles_stat_gpu(dataset,
                                            random_state=self.random_state,
                                            subsample=self.samples, n_jobs=self.n_jobs)
         if len(stat) > 0:
             # upd stat with rules
 
             stat = calc_category_rules(stat)
+            #stat['dtype'] = dtypes
             new_roles_dict = {**new_roles_dict, \
-                              **rule_based_cat_handler_guess(stat)}
+                              **rule_based_cat_handler_guess(stat, dtypes)}
             top_scores.append(stat['max_score'])
 
         # # get top scores of feature

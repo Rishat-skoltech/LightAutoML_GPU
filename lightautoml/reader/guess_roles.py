@@ -568,7 +568,7 @@ def calc_category_rules(
     return stat
 
 
-def rule_based_cat_handler_guess(stat: DataFrame) -> Dict[str, ColumnRole]:
+def rule_based_cat_handler_guess(stat: DataFrame, dtypes=None) -> Dict[str, ColumnRole]:
     """Create roles dict based on stats.
 
     Args:
@@ -592,9 +592,13 @@ def rule_based_cat_handler_guess(stat: DataFrame) -> Dict[str, ColumnRole]:
         if enc_type == "ord":
             enc_type = "auto"
             ordinal = True
+        try:
+            feats = list(st.index)
+        except:
+            feats = list(st.index.to_pandas())
+        if dtypes is None:
+            dtypes = list(st["dtype"])
 
-        feats = list(st.index)
-        dtypes = list(st["dtype"])
         roles_dict = {
             **roles_dict,
             **{x: CategoryRole(dtype=d, encoding_type=enc_type, ordinal=ordinal) for x, d in zip(feats, dtypes)},
