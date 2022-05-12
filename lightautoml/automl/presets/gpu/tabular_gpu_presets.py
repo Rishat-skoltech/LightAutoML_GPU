@@ -10,33 +10,25 @@ from typing import Optional
 from typing import Sequence
 from typing import Union
 
-
+import cupy as cp
 import torch
 
 from pandas import DataFrame
-try:
-    import cupy as cp
-    from lightautoml.dataset.gpu.gpu_dataset import CupyDataset
-    from lightautoml.dataset.gpu.gpu_dataset import CudfDataset
-    from lightautoml.dataset.gpu.gpu_dataset import DaskCudfDataset
-    from lightautoml.dataset.np_pd_dataset import NumpyDataset
-    from lightautoml.ml_algo.gpu.boost_cb_gpu import BoostCB_gpu
-    from lightautoml.ml_algo.gpu.boost_xgb_gpu import BoostXGB
-    from lightautoml.ml_algo.gpu.boost_xgb_gpu import BoostXGB_dask
-    from lightautoml.ml_algo.gpu.linear_gpu import LinearLBFGS_gpu
-    from lightautoml.ml_algo.tuning.gpu.optuna_gpu import OptunaTuner_gpu
-    from lightautoml.ml_algo.tuning.gpu.optuna_gpu import GpuQueue
-    from lightautoml.pipelines.features.gpu.lgb_pipeline_gpu import LGBAdvancedPipeline_gpu
-    from lightautoml.pipelines.features.gpu.lgb_pipeline_gpu import LGBSimpleFeatures_gpu
-    from lightautoml.pipelines.features.gpu.linear_pipeline_gpu import LinearFeatures_gpu
-    from lightautoml.reader.gpu.hybrid_reader import HybridReader
-    from lightautoml.automl.gpu.blend_gpu import MeanBlender_gpu
-    from lightautoml.automl.gpu.blend_gpu import WeightedBlender_gpu
-except ModuleNotFoundError:
-    "GPU version of the library is not installed or corrupted. Switch your presets to CPU mode and then re-run the script."
-    exit(-1)
 
+from lightautoml.dataset.gpu.gpu_dataset import CupyDataset
+from lightautoml.dataset.gpu.gpu_dataset import CudfDataset
+from lightautoml.dataset.gpu.gpu_dataset import DaskCudfDataset
+from lightautoml.dataset.np_pd_dataset import NumpyDataset
+from lightautoml.ml_algo.gpu.boost_cb_gpu import BoostCB_gpu
+from lightautoml.ml_algo.gpu.boost_xgb_gpu import BoostXGB
+from lightautoml.ml_algo.gpu.boost_xgb_gpu import BoostXGB_dask
+from lightautoml.ml_algo.gpu.linear_gpu import LinearLBFGS_gpu
 from lightautoml.ml_algo.tuning.optuna import OptunaTuner
+from lightautoml.ml_algo.tuning.gpu.optuna_gpu import OptunaTuner_gpu
+from lightautoml.ml_algo.tuning.gpu.optuna_gpu import GpuQueue
+from lightautoml.pipelines.features.gpu.lgb_pipeline_gpu import LGBAdvancedPipeline_gpu
+from lightautoml.pipelines.features.gpu.lgb_pipeline_gpu import LGBSimpleFeatures_gpu
+from lightautoml.pipelines.features.gpu.linear_pipeline_gpu import LinearFeatures_gpu
 from lightautoml.pipelines.ml.nested_ml_pipe import NestedTabularMLPipeline
 from lightautoml.pipelines.selection.base import ComposedSelector
 from lightautoml.pipelines.selection.base import SelectionPipeline
@@ -48,12 +40,13 @@ from lightautoml.pipelines.selection.permutation_importance_based import (
 from lightautoml.pipelines.selection.permutation_importance_based import (
     NpPermutationImportanceEstimator,
 )
-
+from lightautoml.reader.gpu.hybrid_reader import HybridReader
 from lightautoml.reader.tabular_batch_generator import ReadableToDf
 from lightautoml.reader.tabular_batch_generator import read_batch
 from lightautoml.reader.tabular_batch_generator import read_data
 from lightautoml.tasks import Task
-
+from lightautoml.automl.gpu.blend_gpu import MeanBlender_gpu
+from lightautoml.automl.gpu.blend_gpu import WeightedBlender_gpu
 from lightautoml.automl.presets.base import upd_params
 
 from lightautoml.automl.presets.tabular_presets import TabularUtilizedAutoML
