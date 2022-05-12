@@ -56,7 +56,7 @@ opencv-python = "*"
 joblib = "*"
 pywavelets = "*"
 scikit-image = "*"
-torchvision = "0.8.0+cu110"
+torchvision = "0.8.1+cu110"
 
 webencodings = "*"
 
