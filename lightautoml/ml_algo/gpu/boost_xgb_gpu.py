@@ -93,7 +93,6 @@ class BoostXGB(TabularMLAlgo_gpu, ImportanceEstimator):
         # get objective params
         loss = self.task.losses['xgb']
         params['objective'] = loss.fobj_name
-        print("OBJECTIVE:", loss.fobj_name, flush=True)
         fobj = loss.fobj
 
         # get metric params
