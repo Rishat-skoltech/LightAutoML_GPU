@@ -275,11 +275,7 @@ class BoostCB_gpu(TabularMLAlgo_gpu, ImportanceEstimator):
             target, weights = self.task.losses['cb'].fw_func(dataset_.target, dataset_.weights)
         else:
             target, weights = dataset_.target, dataset_.weights
-            
-        try:
-            print(f"Catboost: data length is {data.shape}, target is {len(target)}")
-        except:
-            pass
+
         pool = cb.Pool(
             data,
             label=target,
@@ -398,7 +394,7 @@ class BoostCB_gpu(TabularMLAlgo_gpu, ImportanceEstimator):
                 thread_count=params['thread_count'],
                 #task_type='GPU'
             )
-        #print(type(pred))
+
         pred = self.task.losses['cb'].bw_func(pred)
 
         return pred

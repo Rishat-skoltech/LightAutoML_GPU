@@ -103,8 +103,6 @@ class TabularAutoML_gpu(TabularAutoML):
         """
         super(TabularAutoML_gpu.__bases__[0], self).__init__(task, timeout, memory_limit, cpu_limit, gpu_ids, timing_params, config_path)
 
-        print("setting gpuids with", gpu_ids)
-
         # upd manual params
         for name, param in zip(
             [
@@ -538,8 +536,6 @@ class TabularAutoML_gpu(TabularAutoML):
             roles = {**roles, **upd_roles}
         if valid_data is not None:
             data, _ = read_data(valid_data, valid_features, self.cpu_limit, self.read_csv_params)
-
-        print("########DATA TYPE AFTER READER IS:", type(train), flush=True)
 
         oof_pred = super(TabularAutoML_gpu.__bases__[0], self).fit_predict(train, roles=roles, cv_iter=cv_iter, valid_data=valid_data, verbose=verbose)
 

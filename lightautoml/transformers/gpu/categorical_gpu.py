@@ -191,7 +191,6 @@ class LabelEncoder_gpu(LAMLTransformer):
                                
         output = dataset.empty()
         output.set_data(data, self.features, self._output_role)
-
         return output
 
     def transform(self, dataset: GpuNumericalDataset) -> GpuNumericalDataset:
@@ -615,7 +614,7 @@ class TargetEncoder_gpu(LAMLTransformer):
             return self._fit_transform_cupy(dataset)
 
     def _fit_transform_daskcudf(self, dataset: DaskCudfDataset) -> DaskCudfDataset:
-
+        
         super().fit(dataset)
         score_func = self.dask_binary_score_func if dataset.task.name == 'binary'\
                                                else self.dask_reg_score_func
@@ -626,7 +625,6 @@ class TargetEncoder_gpu(LAMLTransformer):
 
         target_name = dataset.target.name
         folds_name = dataset.folds.name
-
         data = dataset.data.persist()
         data[folds_name] = dataset.folds
         data[target_name] = dataset.target
@@ -687,9 +685,17 @@ class TargetEncoder_gpu(LAMLTransformer):
 
             self.encodings.append(enc)
 
+        assert len(dataset.features) == len(self.features)
+        col_map = dict(zip(dataset.features, self.features))
+        
+        oof_feats = oof_feats.rename(columns = col_map)
+        
         output = dataset.empty()
         self.output_role = NumericRole(cp.float32, prob=output.task.name == 'binary')
+        
         output.set_data(oof_feats.persist(), self.features, self.output_role)
+        output.data.rename()
+
         return output
 
     def _fit_transform_cupy(self, dataset: GpuNumericalDataset) -> CupyDataset:
@@ -785,6 +791,13 @@ class TargetEncoder_gpu(LAMLTransformer):
             return self._transform_daskcudf(dataset)
         else:
             return self._transform_cupy(dataset)
+    
+    def create_output(self, df):
+        new_arr = cudf.DataFrame(index=df.index, columns=self.features)
+        assert len(new_arr.columns) == len(df.columns)
+        for i, col in df.columns:
+            new_arr[self.features[i]] = df[col]
+        return new_arr
 
     def _transform_daskcudf(self, dataset: GpuNumericalDataset):
 
@@ -933,6 +946,9 @@ class MultiClassTargetEncoder_gpu(LAMLTransformer):
             return self._fit_transform_daskcudf(dataset)
         else:
             return self._fit_transform_cupy(dataset)
+        
+
+        
 
     def _fit_transform_daskcudf(self, dataset: DaskCudfDataset) -> DaskCudfDataset:
 

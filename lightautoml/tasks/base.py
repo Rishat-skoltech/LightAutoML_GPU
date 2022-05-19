@@ -12,35 +12,56 @@ from typing import Optional
 from typing import Union
 
 import numpy as np
-import cupy as cp
-import cudf
-import dask_cudf
-import dask.array as da
+
+try:
+    import cupy as cp
+    import cudf
+    import dask_cudf
+    import dask.array as da
+except:
+    pass
 
 from lightautoml.tasks.losses import CBLoss
 from lightautoml.tasks.losses import LGBLoss
 from lightautoml.tasks.losses import SKLoss
 from lightautoml.tasks.losses import TORCHLoss
-from lightautoml.tasks.losses import TORCHLoss_gpu
-from lightautoml.tasks.losses.gpu import CUMLLoss
-from lightautoml.tasks.losses.gpu import XGBLoss_gpu
+try:
+    from lightautoml.tasks.losses import TORCHLoss_gpu
+    from lightautoml.tasks.losses.gpu import CUMLLoss
+    from lightautoml.tasks.losses.gpu import XGBLoss_gpu
+except:
+    pass
 
 from .common_metric import _valid_metric_args
 from .common_metric import _valid_str_metric_names
-from lightautoml.tasks.gpu.common_metric_gpu import _valid_str_metric_names_gpu
+try:
+    from lightautoml.tasks.gpu.common_metric_gpu import _valid_str_metric_names_gpu
+except:
+    pass
+
 from .utils import infer_gib
 from .utils import infer_gib_multiclass
-from lightautoml.tasks.gpu.utils_gpu import infer_gib_gpu
-from lightautoml.tasks.gpu.utils_gpu import infer_gib_multiclass_gpu
+
+try:
+    from lightautoml.tasks.gpu.utils_gpu import infer_gib_gpu
+    from lightautoml.tasks.gpu.utils_gpu import infer_gib_multiclass_gpu
+except:
+    pass
 
 if TYPE_CHECKING:
     from ..dataset.base import LAMLDataset
     from ..dataset.np_pd_dataset import NumpyDataset
     from ..dataset.np_pd_dataset import PandasDataset
-    from ..dataset.gpu.gpu_dataset import CupyDataset, CudfDataset, DaskCudfDataset
+    try:
+        from ..dataset.gpu.gpu_dataset import CupyDataset, CudfDataset, DaskCudfDataset
+    except:
+        pass
 
     SklearnCompatible = Union[NumpyDataset, PandasDataset]
-    CumlCompatible = Union[CupyDataset, CudfDataset, DaskCudfDataset]
+    try:
+        CumlCompatible = Union[CupyDataset, CudfDataset, DaskCudfDataset]
+    except:
+        CumlCompatible = SklearnCompatible
 
 logger = logging.getLogger(__name__)
 

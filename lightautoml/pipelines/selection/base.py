@@ -249,8 +249,6 @@ class EmptySelector(SelectionPipeline):
 
         """
         self._selected_features = train_valid.features
-        print("Selected features are:", self._selected_features)
-        
     
     def select(self, dataset: LAMLDataset) -> LAMLDataset:
         """Takes only selected features from giving dataset and creates new dataset.
@@ -270,15 +268,9 @@ class EmptySelector(SelectionPipeline):
             if roles[col].force_input:
                 if col not in sl_set:
                     selected_features.append(col)
-        
-        
-        print("Empty selector Features:", len(self.selected_features))
-        print("Self features:", self.selected_features)
-        print("Dataset features:", dataset.features)
+
         out = dataset[:, self.selected_features]
-        print("Empty Selector:", out.data.shape)
         return out
-    
 
 
 class PredefinedSelector(SelectionPipeline):
@@ -327,7 +319,6 @@ class ComposedSelector(SelectionPipeline):
             train_valid: Dataset iterator.
 
         """
-        print("Entering selector_base...")
         for selector in self.selectors:
             train_valid = train_valid.apply_selector(selector)
 

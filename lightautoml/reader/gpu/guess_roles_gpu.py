@@ -435,6 +435,7 @@ def get_numeric_roles_stat_gpu(train: GpuDataset,
     train = train[:, roles_to_identify]
     train_len = train.shape[0]
     if train.folds is None:
+        print("No train folds! Assigning...")
         train.folds = set_sklearn_folds(train.task, train.target, cv=5,
                                    random_state=random_state, group=train.group)
     if subsample is not None and subsample < train_len:
@@ -531,6 +532,7 @@ def get_category_roles_stat_gpu(train: GpuDataset,
     train_len = train.shape[0]
 
     if train.folds is None:
+        print("No train folds! Assigning...")
         train.folds = set_sklearn_folds(train.task, train.target, cv=5,
                                             random_state=random_state, group=train.group)
     if subsample is not None and subsample < train_len:

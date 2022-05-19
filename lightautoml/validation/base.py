@@ -208,13 +208,10 @@ class HoldoutIterator(TrainValidIterator):
             New iterator.
 
         """
-        print("##### Applying feature pipeline! #####")
-        print(f"Len of data before: {len(self.train)}, {len(self.valid)}")
+
         train_valid = cast("HoldoutIterator", super().apply_feature_pipeline(features_pipeline))
         train_valid.valid = features_pipeline.transform(train_valid.valid)
-        print(f"Len of data after: {len(self.train)}, {len(self.valid)}")
-        
-        print(f"Len of train_valid after: {len(train_valid.train)}, {len(train_valid.valid)}")
+
         return train_valid
 
     def apply_selector(self, selector) -> "HoldoutIterator":

@@ -64,7 +64,7 @@ class LAMLTransformer:
             self.
 
         """
-        self.features = dataset.features
+        self.features = deepcopy(dataset.features)
         for check_func in self._fit_checks:
             check_func(dataset)
         return self

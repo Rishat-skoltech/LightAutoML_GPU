@@ -11,9 +11,13 @@ from lightautoml.dataset.base import LAMLDataset
 from lightautoml.dataset.np_pd_dataset import CSRSparseDataset
 from lightautoml.dataset.np_pd_dataset import NumpyDataset
 from lightautoml.dataset.np_pd_dataset import PandasDataset
-from lightautoml.dataset.gpu.gpu_dataset import CupyDataset
-from lightautoml.dataset.gpu.gpu_dataset import CudfDataset
-from lightautoml.dataset.gpu.gpu_dataset import DaskCudfDataset
+try:
+    from lightautoml.dataset.gpu.gpu_dataset import CupyDataset
+    from lightautoml.dataset.gpu.gpu_dataset import CudfDataset
+    from lightautoml.dataset.gpu.gpu_dataset import DaskCudfDataset
+except:
+    print("No GPUs detected. Switching  to CPU...")
+
 from lightautoml.dataset.roles import ColumnRole
 
 
@@ -165,5 +169,4 @@ def concatenate(datasets: Sequence[LAMLDataset]) -> LAMLDataset:
 
         datasets = [datasets[n]] + [x for (y, x) in enumerate(datasets) if n != y]
     out = conc(datasets)
-    print("Concatenation:", out.data.shape)
     return out

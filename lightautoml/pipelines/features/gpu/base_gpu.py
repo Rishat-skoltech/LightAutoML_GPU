@@ -12,9 +12,12 @@ import dask_cudf
 from lightautoml.pipelines.features.base import TabularDataFeatures
 from lightautoml.pipelines.utils import get_columns_by_role
 
-from lightautoml.dataset.gpu.gpu_dataset import CudfDataset
-from lightautoml.dataset.gpu.gpu_dataset import CupyDataset
-from lightautoml.dataset.gpu.gpu_dataset import DaskCudfDataset
+try:
+    from lightautoml.dataset.gpu.gpu_dataset import CudfDataset
+    from lightautoml.dataset.gpu.gpu_dataset import CupyDataset
+    from lightautoml.dataset.gpu.gpu_dataset import DaskCudfDataset
+except:
+    pass
 from lightautoml.dataset.roles import ColumnRole
 from lightautoml.dataset.roles import NumericRole
 from lightautoml.transformers.base import LAMLTransformer
@@ -22,15 +25,14 @@ from lightautoml.transformers.base import SequentialTransformer
 from lightautoml.transformers.base import ColumnsSelector
 from lightautoml.transformers.base import ConvertDataset
 from lightautoml.transformers.base import ChangeRoles
-from lightautoml.transformers.gpu.categorical_gpu import MultiClassTargetEncoder_gpu
-from lightautoml.transformers.gpu.categorical_gpu import TargetEncoder_gpu
-from lightautoml.transformers.gpu.categorical_gpu import CatIntersections_gpu
-from lightautoml.transformers.gpu.categorical_gpu import FreqEncoder_gpu
-from lightautoml.transformers.gpu.categorical_gpu import LabelEncoder_gpu
-from lightautoml.transformers.gpu.categorical_gpu import OrdinalEncoder_gpu
-from lightautoml.transformers.gpu.datetime_gpu import BaseDiff_gpu
-from lightautoml.transformers.gpu.datetime_gpu import DateSeasons_gpu
-from lightautoml.transformers.gpu.numeric_gpu import QuantileBinning_gpu
+
+try:
+    from lightautoml.transformers.gpu.categorical_gpu import MultiClassTargetEncoder_gpu, TargetEncoder_gpu, \
+        CatIntersections_gpu, FreqEncoder_gpu, LabelEncoder_gpu, OrdinalEncoder_gpu
+    from lightautoml.transformers.gpu.datetime_gpu import BaseDiff_gpu, DateSeasons_gpu
+    from lightautoml.transformers.gpu.numeric_gpu import QuantileBinning_gpu
+except:
+    pass
 
 GpuDataset = Union[CupyDataset, CudfDataset, DaskCudfDataset]
 

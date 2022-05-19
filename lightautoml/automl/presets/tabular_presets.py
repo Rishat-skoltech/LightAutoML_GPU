@@ -493,8 +493,6 @@ class TabularAutoML(AutoMLPreset):
         if valid_data is not None:
             data, _ = read_data(valid_data, valid_features, self.cpu_limit, self.read_csv_params)
 
-        print("########DATA TYPE AFTER READER (parent) IS:", type(train), flush=True)
-
         oof_pred = super().fit_predict(train, roles=roles, cv_iter=cv_iter, valid_data=valid_data, verbose=verbose)
 
         return cast(NumpyDataset, oof_pred)

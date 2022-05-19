@@ -39,7 +39,7 @@ from .guess_roles_gpu import rule_based_roles_guess_gpu
 from .guess_roles_gpu import get_numeric_roles_stat_gpu
 from .guess_roles_gpu import get_category_roles_stat_gpu
 from .guess_roles_gpu import get_null_scores_gpu
-from .utils_gpu import set_sklearn_folds_gpu
+from ..utils import set_sklearn_folds
 from lightautoml.reader.base import PandasToPandasReader
 
 from time import perf_counter
@@ -219,7 +219,7 @@ class CudfReader(PandasToPandasReader):
         assert len(self.used_features) > 0, \
             'All features are excluded for some reasons'
 
-        folds = set_sklearn_folds_gpu(self.task, kwargs['target'],
+        folds = set_sklearn_folds(self.task, kwargs['target'],
                                   cv=self.cv, random_state=self.random_state,
                                   group=None if 'group' not in kwargs else kwargs['group'])
 
@@ -244,7 +244,6 @@ class CudfReader(PandasToPandasReader):
                                   self.roles, task=self.task, **kwargs)
 
         print("cudf reader:", perf_counter() - st)
-
         return dataset
 
     def _create_target(self, target: Series):
