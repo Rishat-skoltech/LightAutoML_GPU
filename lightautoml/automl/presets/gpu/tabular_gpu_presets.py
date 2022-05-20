@@ -10,7 +10,11 @@ from typing import Optional
 from typing import Sequence
 from typing import Union
 
-import cupy as cp
+try:
+    import cupy as cp
+except:
+    print("GPU version is not installed or no GPUs detected. Reinstall your library or switch to CPU preset.")
+    exit(-1)
 import torch
 
 from pandas import DataFrame
