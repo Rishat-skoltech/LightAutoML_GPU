@@ -55,7 +55,10 @@ class TorchBasedLinearEstimator:
         return preds
 
     def _prepare_data_dense(self, data, y, weights, rank):
-
+        if type(data) is cp.ndarray:
+            categorical_idx = self.categorical_idx['int']
+        else:
+            categorical_idx = self.categorical_idx['str']
         if rank is None:
             ind = 0
             size = 1
@@ -85,6 +88,7 @@ class TorchBasedLinearEstimator:
             else:
                 y = cp.copy(y[offset:offset + size_base + int(residue > ind)])
             y = torch.as_tensor(y.astype(cp.float32), device=device_id)
+        
         if weights is not None:
 
             if type(weights) != cp.ndarray:
@@ -93,31 +97,44 @@ class TorchBasedLinearEstimator:
                 weights = cp.copy(weights[offset:offset + size_base + int(residue > ind)])
 
             weights = torch.as_tensor(weights.astype(cp.float32), device=device_id)
-
-        if 0 < len(self.categorical_idx) < data.shape[1]:
-            # noinspection PyTypeChecker
+        
+        if 0 < len(categorical_idx) < data.shape[1]:
             
-            data_cat = torch.as_tensor(
-                    data[self.categorical_idx].values.astype(cp.int32),
-                    device=device_id
-                )
-            data_ = torch.as_tensor(
-                    data[data.columns.difference(self.categorical_idx)] \
+            if type(data) is cp.ndarray:
+                
+                data_cat = torch.as_tensor(data[:, self.categorical_idx['int']].astype(cp.int32), 
+                                           device=device_id)
+                data_ = torch.as_tensor(data[:, np.setdiff1d(np.arange(data.shape[1]),
+                                                            self.categorical_idx['int'])]\
+                                                           .astype(cp.float32), device=device_id)
+            
+            else:
+                data_cat = torch.as_tensor(
+                    data[categorical_idx].values.astype(cp.int32),
+                    device=device_id)
+                data_ = torch.as_tensor(
+                    data[data.columns.difference(self.categorical_idx['str'])] \
                         .values.astype(cp.float32),
-                    device=device_id
-                )
+                    device=device_id)
+                
             return data_, data_cat, y, weights
 
-        elif len(self.categorical_idx) == 0:
-            if type(data) == cp.ndarray:
-                data_ = torch.as_tensor(data.astype(cp.float32), device=device_id)
+        elif len(self.categorical_idx['int']) == 0:
+            if type(data) is cp.ndarray:
+                data = torch.as_tensor(data.astype(cp.float32), device=device_id)
+                return data, None, y, weights
             else:
-                data_ = torch.as_tensor(data.values.astype(cp.float32), device=device_id)
-            return data_, None, y, weights
+                data = torch.as_tensor(data.values.astype(cp.float32), device=device_id)
+                return data, None, y, weights
 
         else:
-            data_cat = torch.as_tensor(data.values.astype(cp.int32), device=device_id)
-            return None, data_cat
+            if type(data) is cp.ndarray:
+                data_cat = torch.as_tensor(data.astype(cp.int32), device=device_id)
+                
+            else:
+                data_cat = torch.as_tensor(data.values.astype(cp.int32), device=device_id)
+            return None, data_cat, y, weights
+
 
     def __init__(
             self,
@@ -221,16 +238,13 @@ class TorchBasedLinearEstimator:
         results = []
 
         def closure():
-            opt.zero_grad()
-            #print("############### TARGET CHECK....###########")
-            #assert (y>= 0).all and (y <=1).all(), 'Target is beyond'
-            #print("############### TARGET CHECK OK ###########")
+            opt.zero_grad(set_to_none=True)
             output = model(data, data_cat)
-            # assert not (output.isnan().any() is True), "Output contains NaN values!"
+            
             loss = self._loss_fn(model, y.reshape(-1, 1), output, weights, c)
             if loss.requires_grad:
                 loss.backward()
-            results.append(loss.item())
+            #results.append(loss.item())
             return loss
 
         opt.step(closure)
@@ -255,7 +269,7 @@ class TorchBasedLinearEstimator:
             Loss+Regularization value.
 
         """
-        # weighted loss
+       
         loss = self.loss(y_true, y_pred, sample_weight=weights)
 
         n = y_true.shape[0]
@@ -305,13 +319,62 @@ class TorchBasedLinearEstimator:
 
         es = 0
         best_score = -np.inf
+        
+        #print(self.model)
+        
+        data_slices = []
+        data_cats = []
+        y_slices = []
+        weights_slices = []
+        
+        data_slices_val = []
+        data_cats_val = []
+        y_slices_val = []
+        weights_slices_val = []
+        
+        for i in range(len(self.gpu_ids)):
+            data_slice, data_cat, y_slice, weights_slice = self._prepare_data(data, 
+                                                                              y, 
+                                                                              weights, 
+                                                                              i)
+            data_val_slice, data_val_cat_slice, y_val_slice, weights_val_slice = self._prepare_data(data_val, 
+                                                                            y_val, 
+                                                                            weights_val, 
+                                                                            i)
+            data_slices.append(data_slice)
+            data_cats.append(data_cat)
+            y_slices.append(y_slice)
+            weights_slices.append(weights_slice)
+            
+            data_slices_val.append(data_val_slice)
+            data_cats_val.append(data_val_cat_slice)
+            y_slices_val.append(y_val_slice)
+            weights_slices_val.append(weights_val_slice)
+        
+        
         for c in self.cs:
-            with Parallel(n_jobs=len(self.gpu_ids), backend='threading') as p:
-                res = p(delayed(train_iteration)
-                        (data, y, weights, int(device_id), c)
-                        for device_id in self.gpu_ids)
+            res = []
+            models = []
+            for i in range(len(self.gpu_ids)):
+                models.append(deepcopy(self.model.to(f'cuda:{i}')))
+            
+            for i in range(len(self.gpu_ids)):
+                #print("SLICE:",i)
+                self._optimize(models[i], data_slices[i], data_cats[i], y_slices[i], weights_slices[i], c)
+                
+                #val_pred = self._score(models[i], data_slices_val[i], data_cats_val[i])
+                #score = self.metric(y_val, val_pred, weights_val)
+                
+            #[torch.cuda.synchronize(device=f'cuda:{i}') for i in range(len(self.gpu_ids))]
+            #torch.cuda.empty_cache()
+            #with Parallel(n_jobs=len(self.gpu_ids), backend='threading') as p:
+            #    res = p(delayed(train_iteration)
+            #            (data, y, weights, int(device_id), c)
+            #            for device_id in self.gpu_ids)
+            
             new_state_dict = OrderedDict()
-            for i, it in enumerate(res):
+            for i, it in enumerate(models):
+                it = it.state_dict()
                 if i == 0:
                     for k in it.keys():
                         new_state_dict[k.replace('module.', '')] = it[k].clone().to('cuda:0')
@@ -319,20 +382,25 @@ class TorchBasedLinearEstimator:
                     for k in it.keys():
                         new_state_dict[k.replace('module.', '')] += it[k].clone().to('cuda:0')
             for k in new_state_dict.keys():
-                new_state_dict[k] = torch.div(new_state_dict[k], float(len(res)))
+                new_state_dict[k] = torch.div(new_state_dict[k], float(len(self.gpu_ids)))
 
             self.model.to('cuda').load_state_dict(new_state_dict)
+            
+            scores = [0. for i in range(len(self.gpu_ids))]
+            for i in range(len(self.gpu_ids)):
+                #print("SLICE_VAL:",i)
+                model = self.model.to(f'cuda:{i}')
+                val_pred = self._score(model, data_slices_val[i], data_cats_val[i])
+                scores[i] = self.metric(y_slices_val[i], val_pred, weights_slices_val[i])
+                
 
-            with Parallel(n_jobs=len(self.gpu_ids), prefer='threads') as p:
-                res = p(delayed(score_iteration)
-                        (data_val, y_val, weights_val, int(device_id))
-                        for device_id in self.gpu_ids)
-
-            score = 0.0
-            for it in res:
-                score += it
-            score /= len(self.gpu_ids)
-
+            #with Parallel(n_jobs=len(self.gpu_ids), prefer='threads') as p:
+            #    res = p(delayed(score_iteration)
+            #            (data_val, y_val, weights_val, int(device_id))
+            #            for device_id in self.gpu_ids)
+            
+            score = np.mean(scores)
+            print("Score:", score)
             if score > best_score:
                 best_score = score
                 best_model_params = deepcopy(new_state_dict)
@@ -341,6 +409,7 @@ class TorchBasedLinearEstimator:
                 es += 1
             if es >= self.early_stopping:
                 break
+            #[torch.cuda.synchronize(device=f'cuda:{i}') for i in range(len(self.gpu_ids))]
 
         self.model.to('cuda').load_state_dict(best_model_params)
         return self
@@ -412,7 +481,7 @@ class TorchBasedLogisticRegression(TorchBasedLinearEstimator):
             loss = TorchLossWrapper(_loss)
         super().__init__(data_size, categorical_idx, embed_sizes, output_size, cs, max_iter, tol, early_stopping, loss, metric,
                          gpu_ids)
-        self.model = _model(self.data_size - len(self.categorical_idx), self.embed_sizes, self.output_size).cuda()
+        self.model = _model(self.data_size - len(self.categorical_idx['str']), self.embed_sizes, self.output_size).cuda()
 
     def predict(self, data: cp.ndarray, dev_id=None) -> cp.ndarray:
         """Inference phase.
@@ -494,7 +563,7 @@ class TorchBasedLinearRegression(TorchBasedLinearEstimator):
             gpu_ids
         )
         self.model = CatRegression(
-            self.data_size - len(self.categorical_idx),
+            self.data_size - len(self.categorical_idx['str']),
             self.embed_sizes,
             self.output_size
         ).cuda()

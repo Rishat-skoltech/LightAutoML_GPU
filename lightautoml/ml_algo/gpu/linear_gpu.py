@@ -126,22 +126,31 @@ class LinearLBFGS_gpu(TabularMLAlgo_gpu):
 
         suggested_params = copy(self.default_params)
         train = train_valid_iterator.train
+        
+        if True:#type(train) == DaskCudfDataset:
+            suggested_params['categorical_idx'] = {}
+            suggested_params['categorical_idx']['int'] = [
+                i for i, x in enumerate(train.features) if train.roles[x].name == 'Category'
+            ]
+            suggested_params['categorical_idx']['str'] = [
+                x for i, x in enumerate(train.features) if train.roles[x].name == 'Category'
+            ]
 
-        if type(train) == CupyDataset or (type(train) == DaskCudfDataset and self.parallel_folds):
-            suggested_params['categorical_idx'] = [
-               i for i,x in enumerate(train.features) if train.roles[x].name == 'Category'
-            ]
-        else:
-            suggested_params['categorical_idx'] = [
-                x for x in train.features if train.roles[x].name == 'Category'
-            ]
+        #if type(train) == CupyDataset or (type(train) == DaskCudfDataset and self.parallel_folds):
+        #    suggested_params['categorical_idx'] = [
+        #       i for i,x in enumerate(train.features) if train.roles[x].name == 'Category'
+        #    ]
+        #else:
+        #    suggested_params['categorical_idx'] = [
+        #        x for x in train.features if train.roles[x].name == 'Category'
+        #    ]
 
         suggested_params['embed_sizes'] = ()
 
-        if len(suggested_params['categorical_idx']) > 0:
+        if len(suggested_params['categorical_idx']['int']) > 0:
             if type(train) == CupyDataset:
                 suggested_params['embed_sizes'] = (
-                    cp.asnumpy(train.data[:,suggested_params['categorical_idx']].astype(cp.int32).max(axis=0)) + 1
+                    cp.asnumpy(train.data[:,suggested_params['categorical_idx']['int']].astype(cp.int32).max(axis=0)) + 1
                 )
             elif (type(train) == DaskCudfDataset and self.parallel_folds):
                 cat = [x for x in train.features if train.roles[x].name == 'Category']
@@ -150,7 +159,7 @@ class LinearLBFGS_gpu(TabularMLAlgo_gpu):
                 )
             else:
                 suggested_params['embed_sizes'] = (
-                    train.data[suggested_params['categorical_idx']].astype(cp.int32).max(axis=0) + 1
+                    train.data[suggested_params['categorical_idx']['str']].astype(cp.int32).max(axis=0) + 1
                 )
             if type(train) == DaskCudfDataset:
                 suggested_params['embed_sizes'] = suggested_params['embed_sizes'].compute()

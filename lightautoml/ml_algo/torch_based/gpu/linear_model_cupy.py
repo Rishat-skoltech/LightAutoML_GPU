@@ -257,7 +257,7 @@ class TorchBasedLinearEstimator:
             Tuple (numeric_features, `None`).
 
         """
-        assert len(self.categorical_idx) == 0, 'Support only numeric with sparse matrix'
+        assert len(self.categorical_idx['int']) == 0, 'Support only numeric with sparse matrix'
         data = convert_cupy_scipy_sparse_to_torch_float(data, dev_id)
         return data, None
 
@@ -273,15 +273,17 @@ class TorchBasedLinearEstimator:
             Tuple (numeric_features, cat_features).
 
         """
+        print("data type is:", type(data))
+        print("cat idx:", self.categorical_idx)
 
-        if 0 < len(self.categorical_idx) < data.shape[1]:
+        if 0 < len(self.categorical_idx['int']) < data.shape[1]:
 
-            data_cat = torch.as_tensor(data[:, self.categorical_idx].astype(cp.int32), device=f'cuda:{dev_id}')
+            data_cat = torch.as_tensor(data[:, self.categorical_idx['int']].astype(cp.int32), device=f'cuda:{dev_id}')
             
-            data = torch.as_tensor(data[:, np.setdiff1d(np.arange(data.shape[1]), self.categorical_idx)].astype(cp.float32), device=f'cuda:{dev_id}')
+            data = torch.as_tensor(data[:, np.setdiff1d(np.arange(data.shape[1]), self.categorical_idx['int'])].astype(cp.float32), device=f'cuda:{dev_id}')
             return data, data_cat
 
-        elif len(self.categorical_idx) == 0:
+        elif len(self.categorical_idx['int']) == 0:
             data = torch.as_tensor(data.astype(cp.float32), device=f'cuda:{dev_id}')
             return data, None
 
@@ -524,7 +526,7 @@ class TorchBasedLogisticRegression(TorchBasedLinearEstimator):
         if loss is None:
             loss = TorchLossWrapper(_loss)
         super().__init__(data_size, categorical_idx, embed_sizes, output_size, cs, max_iter, tol, early_stopping, loss, metric)
-        self.model = _model(self.data_size - len(self.categorical_idx), self.embed_sizes, self.output_size).cuda()
+        self.model = _model(self.data_size - len(self.categorical_idx['int']), self.embed_sizes, self.output_size).cuda()
 
     def predict(self, data: cp.ndarray, dev_id: int = 0) -> cp.ndarray:
         """Inference phase.
@@ -602,7 +604,7 @@ class TorchBasedLinearRegression(TorchBasedLinearEstimator):
             metric
         )
         self.model = CatRegression(
-            self.data_size - len(self.categorical_idx),
+            self.data_size - len(self.categorical_idx['int']),
             self.embed_sizes,
             self.output_size
         ).cuda()
