@@ -273,8 +273,6 @@ class TorchBasedLinearEstimator:
             Tuple (numeric_features, cat_features).
 
         """
-        print("data type is:", type(data))
-        print("cat idx:", self.categorical_idx)
 
         if 0 < len(self.categorical_idx['int']) < data.shape[1]:
 
