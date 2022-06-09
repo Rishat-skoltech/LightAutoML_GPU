@@ -44,7 +44,8 @@ from lightautoml.pipelines.selection.permutation_importance_based import (
 from lightautoml.pipelines.selection.permutation_importance_based import (
     NpPermutationImportanceEstimator,
 )
-from lightautoml.reader.gpu.hybrid_reader import HybridReader
+from lightautoml.reader.gpu.cudf_reader import CudfReader
+from lightautoml.reader.gpu.daskcudf_reader import DaskCudfReader
 from lightautoml.reader.tabular_batch_generator import ReadableToDf
 from lightautoml.reader.tabular_batch_generator import read_batch
 from lightautoml.reader.tabular_batch_generator import read_data
@@ -444,8 +445,16 @@ class TabularAutoML_gpu(TabularAutoML):
         multilevel_avail = fit_args["valid_data"] is None and fit_args["cv_iter"] is None
 
         self.infer_auto_params(train_data, multilevel_avail)
+        num_data = train_data.shape[0] * train_data.shape[1]
 
-        reader = HybridReader(task=self.task, **self.reader_params)
+        if num_data < 1e8 or self.task.device == 'gpu':
+            reader = CudfReader(task=self.task, **self.reader_params)
+        else:
+            if not self.task.device is 'cpu':
+                reader = DaskCudfReader(task=self.task, **self.reader_params)
+            else:
+                raise ValueError("Device must be either gpu or mgpu to run on GPUs")
+
 
         pre_selector = self.get_selector()
 
