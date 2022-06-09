@@ -450,7 +450,7 @@ class TabularAutoML_gpu(TabularAutoML):
         if num_data < 1e8 or self.task.device == 'gpu':
             reader = CudfReader(task=self.task, **self.reader_params)
         else:
-            if not self.task.device is 'cpu':
+            if self.task.device != 'cpu':
                 reader = DaskCudfReader(task=self.task, **self.reader_params)
             else:
                 raise ValueError("Device must be either gpu or mgpu to run on GPUs")
