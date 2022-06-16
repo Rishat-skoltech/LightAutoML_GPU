@@ -263,6 +263,8 @@ class AutoML:
                             "Can not convert prediction dataset type to input features. Set skip_conn=False"
                         )
                     level_predictions = concatenate([level_predictions, valid_part])
+                    level_predictions.folds.name = valid_part.folds.name
+                    level_predictions.target.name = valid_part.target.name
                 train_valid = create_validation_iterator(level_predictions, None, n_folds=None, cv_iter=None)
             else:
                 break
