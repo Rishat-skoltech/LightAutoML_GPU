@@ -957,10 +957,10 @@ class MultiClassTargetEncoder_gpu(LAMLTransformer):
 
         target_name = dataset.target.name
         folds_name = dataset.folds.name
-
-        data = dataset.data
-        data[folds_name] = dataset.folds#.astype('i8')
-        data[target_name] = dataset.target#.astype('i8')
+        
+        data = dataset.data.persist()
+        data[folds_name] = dataset.folds.persist()
+        data[target_name] = dataset.target.persist()
 
         n_folds = int(data[folds_name].max().compute() + 1)
         n_classes = int(dataset.target.max().compute() + 1)
