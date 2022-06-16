@@ -352,6 +352,7 @@ class StandardScaler_gpu(LAMLTransformer):
 
         self.means = dataset.data.mean(skipna=True).compute().values
         self.stds = dataset.data.std(skipna=True).compute().values
+        self.stds[(self.stds == 0) | cp.isnan(self.stds)] = 1
         return self
 
     def fit(self, dataset: CupyTransformable):

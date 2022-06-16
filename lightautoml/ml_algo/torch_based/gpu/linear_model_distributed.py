@@ -76,7 +76,7 @@ class TorchBasedLinearEstimator:
         size_base = data.shape[0] // size
         residue = int(data.shape[0] % size)
         offset = size_base * ind + min(ind, residue)
-
+        
         if type(data) == cp.ndarray:
             data = data[offset:offset + size_base + int(residue > ind), :]
         else:
@@ -214,7 +214,7 @@ class TorchBasedLinearEstimator:
 
     def _optimize(self, model, data: torch.Tensor,
                   data_cat: Optional[torch.Tensor], y: torch.Tensor = None,
-                  weights: Optional[torch.Tensor] = None, c: float = 1):
+                  weights: Optional[torch.Tensor] = None, c: float = 1.):
         """Optimize single model.
 
         Args:
@@ -244,7 +244,7 @@ class TorchBasedLinearEstimator:
             loss = self._loss_fn(model, y.reshape(-1, 1), output, weights, c)
             if loss.requires_grad:
                 loss.backward()
-            #results.append(loss.item())
+            results.append(loss.item())
             return loss
 
         opt.step(closure)
@@ -269,7 +269,7 @@ class TorchBasedLinearEstimator:
             Loss+Regularization value.
 
         """
-       
+        
         loss = self.loss(y_true, y_pred, sample_weight=weights)
 
         n = y_true.shape[0]
@@ -289,39 +289,10 @@ class TorchBasedLinearEstimator:
             y_val: Optional[dask_cudf.DataFrame] = None,
             weights_val: Optional[cp.ndarray] = None,
             dev_id=None):
-        
-        print("####### ASSERTION CHECK.... ##########")
-
-        assert self.model is not None, 'Model should be defined'
-        if type(data) == cp.ndarray:
-            assert not (data.isnan().any() is True), 'Data contains NaN values!'
-        elif type(data) == dask_cudf.DataFrame:
-            assert not (data.isna().any().compute() is True), 'Data contains NaN values!'
-        else:
-            assert not (data.isna().any() is True), 'Data contains NaN values!'
-            
-        print("####### ASSERTION PASSED OK ##########")
-            
-        def train_iteration(data, y, weights, rank, c):
-            model = deepcopy(self.model)  # .to(rank)
-            model.to(rank)
-            data, data_cat, y, weights = self._prepare_data(data, y, weights, rank)
-            self._optimize(model, data, data_cat, y, weights, c)
-            return model.state_dict()
-
-        def score_iteration(data_val, y_val, weights_val, rank):
-            model = deepcopy(self.model)  # .to(rank)
-            model.to(rank)
-            data_val, data_val_cat, y_val, weights_val = self._prepare_data(data_val, y_val, weights_val, rank)
-            val_pred = self._score(model, data_val, data_val_cat)
-            score = self.metric(y_val, val_pred, weights_val)
-            return score
 
         es = 0
         best_score = -np.inf
-        
-        #print(self.model)
-        
+
         data_slices = []
         data_cats = []
         y_slices = []
@@ -353,25 +324,14 @@ class TorchBasedLinearEstimator:
         
         
         for c in self.cs:
-            res = []
             models = []
             for i in range(len(self.gpu_ids)):
                 models.append(deepcopy(self.model.to(f'cuda:{i}')))
             
             for i in range(len(self.gpu_ids)):
-                #print("SLICE:",i)
                 self._optimize(models[i], data_slices[i], data_cats[i], y_slices[i], weights_slices[i], c)
                 
-                #val_pred = self._score(models[i], data_slices_val[i], data_cats_val[i])
-                #score = self.metric(y_val, val_pred, weights_val)
                 
-            #[torch.cuda.synchronize(device=f'cuda:{i}') for i in range(len(self.gpu_ids))]
-            #torch.cuda.empty_cache()
-            #with Parallel(n_jobs=len(self.gpu_ids), backend='threading') as p:
-            #    res = p(delayed(train_iteration)
-            #            (data, y, weights, int(device_id), c)
-            #            for device_id in self.gpu_ids)
-            
             new_state_dict = OrderedDict()
             for i, it in enumerate(models):
                 it = it.state_dict()
@@ -381,24 +341,18 @@ class TorchBasedLinearEstimator:
                 else:
                     for k in it.keys():
                         new_state_dict[k.replace('module.', '')] += it[k].clone().to('cuda:0')
+            
             for k in new_state_dict.keys():
-                new_state_dict[k] = torch.div(new_state_dict[k], float(len(self.gpu_ids)))
+                new_state_dict[k] = new_state_dict[k]/float(len(self.gpu_ids))
 
             self.model.to('cuda').load_state_dict(new_state_dict)
             
             scores = [0. for i in range(len(self.gpu_ids))]
             for i in range(len(self.gpu_ids)):
-                #print("SLICE_VAL:",i)
                 model = self.model.to(f'cuda:{i}')
                 val_pred = self._score(model, data_slices_val[i], data_cats_val[i])
                 scores[i] = self.metric(y_slices_val[i], val_pred, weights_slices_val[i])
                 
-
-            #with Parallel(n_jobs=len(self.gpu_ids), prefer='threads') as p:
-            #    res = p(delayed(score_iteration)
-            #            (data_val, y_val, weights_val, int(device_id))
-            #            for device_id in self.gpu_ids)
-            
             score = np.mean(scores)
             print("Score:", score)
             if score > best_score:
@@ -409,8 +363,6 @@ class TorchBasedLinearEstimator:
                 es += 1
             if es >= self.early_stopping:
                 break
-            #[torch.cuda.synchronize(device=f'cuda:{i}') for i in range(len(self.gpu_ids))]
-
         self.model.to('cuda').load_state_dict(best_model_params)
         return self
 

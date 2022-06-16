@@ -1171,7 +1171,7 @@ class MultiClassTargetEncoder_gpu(LAMLTransformer):
                       self.features, meta=cudf.DataFrame(columns=self.features))\
                       .persist()
         output = dataset.empty()
-        output.set_data(res, self.features, self.output_role)
+        output.set_data(res, self.features, NumericRole(cp.float32, prob=True))
         return output
 
     def _transform_cupy(self, dataset: GpuNumericalDataset) -> CupyDataset:

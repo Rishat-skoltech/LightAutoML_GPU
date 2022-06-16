@@ -323,13 +323,7 @@ class TorchBasedLinearEstimator:
         def closure():
             opt.zero_grad()
             output = self.model(data, data_cat)
-            #print(output.device)
-            #print(y.device)
-            if weights is not None:
-                print(weights.device)
-            #print(c.device)
             loss = self._loss_fn(y, output, weights, c).cuda()
-            #print(loss.item())
             if loss.requires_grad:
                 loss.backward()
             results.append(loss.item())
