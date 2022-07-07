@@ -244,7 +244,6 @@ class TorchBasedLinearEstimator:
             loss = self._loss_fn(model, y.reshape(-1, 1), output, weights, c)
             if loss.requires_grad:
                 loss.backward()
-            results.append(loss.item())
             return loss
 
         opt.step(closure)
@@ -289,10 +288,8 @@ class TorchBasedLinearEstimator:
             y_val: Optional[dask_cudf.DataFrame] = None,
             weights_val: Optional[cp.ndarray] = None,
             dev_id=None):
-
         es = 0
         best_score = -np.inf
-
         data_slices = []
         data_cats = []
         y_slices = []
@@ -324,6 +321,7 @@ class TorchBasedLinearEstimator:
         
         
         for c in self.cs:
+            res = []
             models = []
             for i in range(len(self.gpu_ids)):
                 models.append(deepcopy(self.model.to(f'cuda:{i}')))
@@ -347,13 +345,17 @@ class TorchBasedLinearEstimator:
 
             self.model.to('cuda').load_state_dict(new_state_dict)
             
-            scores = [0. for i in range(len(self.gpu_ids))]
+            scores = np.zeros(len(self.gpu_ids))
+
             for i in range(len(self.gpu_ids)):
                 model = self.model.to(f'cuda:{i}')
                 val_pred = self._score(model, data_slices_val[i], data_cats_val[i])
-                scores[i] = self.metric(y_slices_val[i], val_pred, weights_slices_val[i])
+                # TODO: check if this conversion is necessary
+                scores[i] = cp.asnumpy(
+                    self.metric(cp.asarray(y_slices_val[i]), val_pred, weights_slices_val[i])
+                )
                 
-            score = np.mean(scores)
+            score = scores.mean()
             print("Score:", score)
             if score > best_score:
                 best_score = score
@@ -363,6 +365,8 @@ class TorchBasedLinearEstimator:
                 es += 1
             if es >= self.early_stopping:
                 break
+            #[torch.cuda.synchronize(device=f'cuda:{i}') for i in range(len(self.gpu_ids))]
+
         self.model.to('cuda').load_state_dict(best_model_params)
         return self
 
@@ -530,5 +534,5 @@ class TorchBasedLinearRegression(TorchBasedLinearEstimator):
             predicted target values.
 
         """
-        return super().predict(data)[:, 0]
+        return super().predict(data)
 
