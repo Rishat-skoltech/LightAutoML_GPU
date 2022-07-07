@@ -253,7 +253,7 @@ def calc_ginis_gpu(data: Union[GpuFrame, cp.ndarray],
         new_len = data.shape[1]
     else:
         new_len = len(data.columns)
-        data = data.values.astype(cp.float32)
+        data = data.fillna(cp.nan).values.astype(cp.float32)
 
     if isinstance(empty_slice, cp.ndarray):
         orig_len = empty_slice.shape[1]
