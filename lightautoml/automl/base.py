@@ -305,7 +305,6 @@ class AutoML:
 
         for n, level in enumerate(self.levels, 1):
             # check if last level
-
             level_predictions = []
             for _n, ml_pipe in enumerate(level):
                 level_predictions.append(ml_pipe.predict(dataset))
