@@ -113,7 +113,9 @@ class FeaturesPipeline:
         """
         # TODO: Think about input/output features attributes
         self._input_features = train.features
+        
         self._pipeline = self._merge_seq(train) if self.sequential else self._merge(train)
+        
         return self._pipeline.fit_transform(train)
 
     def transform(self, test: LAMLDataset) -> LAMLDataset:
@@ -126,7 +128,8 @@ class FeaturesPipeline:
             Dataset with new features.
 
         """
-        return self._pipeline.transform(test)
+        out = self._pipeline.transform(test)
+        return out
 
     def set_sequential(self, val: bool = True):
         self.sequential = val

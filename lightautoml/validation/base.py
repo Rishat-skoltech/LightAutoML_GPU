@@ -78,6 +78,7 @@ class TrainValidIterator:
 
         """
         train_valid = copy(self)
+        
         train_valid.train = features_pipeline.fit_transform(train_valid.train)
         return train_valid
 
@@ -207,6 +208,7 @@ class HoldoutIterator(TrainValidIterator):
             New iterator.
 
         """
+
         train_valid = cast("HoldoutIterator", super().apply_feature_pipeline(features_pipeline))
         train_valid.valid = features_pipeline.transform(train_valid.valid)
 

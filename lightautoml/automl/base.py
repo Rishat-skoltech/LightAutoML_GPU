@@ -9,6 +9,8 @@ from typing import List
 from typing import Optional
 from typing import Sequence
 
+from torch.cuda import device_count
+
 from ..dataset.base import LAMLDataset
 from ..dataset.utils import concatenate
 from ..pipelines.ml.base import MLPipeline
@@ -125,12 +127,6 @@ class AutoML:
               input features to next levels.
             return_all_predictions: True if we should return all predictions from last
               level models.
-            verbose: Controls the verbosity: the higher, the more messages.
-                <1  : messages are not displayed;
-                >=1 : the computation process for layers is displayed;
-                >=2 : the information about folds processing is also displayed;
-                >=3 : the hyperparameters optimization process is also displayed;
-                >=4 : the training process for every algorithm is displayed;
 
         """
         assert len(levels) > 0, "At least 1 level should be defined"
@@ -177,7 +173,12 @@ class AutoML:
             valid_data: Optional validation dataset.
             valid_features: Optional validation dataset
               features if can't be inferred from `valid_data`.
-
+            verbose: Controls the verbosity: the higher, the more messages.
+                <1  : messages are not displayed;
+                >=1 : the computation process for layers is displayed;
+                >=2 : the information about folds processing is also displayed;
+                >=3 : the hyperparameters optimization process is also displayed;
+                >=4 : the training process for every algorithm is displayed;
         Returns:
             Predicted values.
 
@@ -198,7 +199,13 @@ class AutoML:
         if valid_data is not None:
             valid_dataset = self.reader.read(valid_data, valid_features, add_array_attrs=True)
 
+        if self.task.device == 'mgpu':
+            train_dataset = train_dataset.to_daskcudf(device_count())
+            if valid_dataset is not None:
+                valid_dataset = valid_dataset.to_daskcudf(device_count())
+
         train_valid = create_validation_iterator(train_dataset, valid_dataset, n_folds=None, cv_iter=cv_iter)
+        
         # for pycharm)
         level_predictions = None
         pipes = None
@@ -255,6 +262,8 @@ class AutoML:
                             "Can not convert prediction dataset type to input features. Set skip_conn=False"
                         )
                     level_predictions = concatenate([level_predictions, valid_part])
+                    level_predictions.folds.name = valid_part.folds.name
+                    level_predictions.target.name = valid_part.target.name
                 train_valid = create_validation_iterator(level_predictions, None, n_folds=None, cv_iter=None)
             else:
                 break
@@ -290,19 +299,18 @@ class AutoML:
         """
 
         dataset = self.reader.read(data, features_names=features_names, add_array_attrs=False)
+        if self.task.device == 'mgpu':
+            dataset = dataset.to_daskcudf(device_count())
+
         for n, level in enumerate(self.levels, 1):
             # check if last level
-
             level_predictions = []
             for _n, ml_pipe in enumerate(level):
                 level_predictions.append(ml_pipe.predict(dataset))
 
             if n != len(self.levels):
-
                 level_predictions = concatenate(level_predictions)
-
                 if self.skip_conn:
-
                     try:
                         # convert to initital dataset type
                         level_predictions = dataset.from_dataset(level_predictions)

@@ -1,9 +1,10 @@
 """Report generators and templates."""
 
 from lightautoml.utils.installation import __validate_extra_deps
-
-from .report_deco_gpu import ReportDeco
-
+try:
+    from .report_deco_gpu import ReportDeco
+except:
+    pass
 
 
 __validate_extra_deps("pdf")

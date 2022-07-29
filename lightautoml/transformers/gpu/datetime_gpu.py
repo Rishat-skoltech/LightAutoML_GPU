@@ -67,7 +67,6 @@ class TimeToNum_gpu(LAMLTransformer):
         time_diff = cudf.DatetimeIndex(pd.date_range(self.basic_time,
                                        periods=1, freq='d')).astype(int)[0]
 
-        #bad hardcode, but unit from dataset.roles is None
         timedelta = np.timedelta64(1, self.basic_interval)/np.timedelta64(1, 'ns')
 
         data = self._standardize_date(data, time_diff, timedelta).values
@@ -84,7 +83,6 @@ class TimeToNum_gpu(LAMLTransformer):
         time_diff = cudf.DatetimeIndex(pd.date_range(self.basic_time,
                                        periods=1, freq='d')).astype(int)[0]
 
-        #bad hardcode, but unit from dataset.roles is None
         timedelta = np.timedelta64(1, self.basic_interval)/np.timedelta64(1, 'ns')
 
         data = data.map_partitions(self._standardize_date,
@@ -186,9 +184,6 @@ class BaseDiff_gpu(LAMLTransformer):
         dataset = dataset.to_cudf()
         data = dataset.data
 
-        #shouldn't hardcode this,
-        #should take units from dataset.roles
-        #(but its unit is none currently)
         timedelta = np.timedelta64(1, self.basic_interval)/np.timedelta64(1, 'ns')
 
         feats_block = []
@@ -208,9 +203,6 @@ class BaseDiff_gpu(LAMLTransformer):
 
         data = dataset.data
 
-        #shouldn't hardcode this,
-        #should take units from dataset.roles
-        #(but its unit is none currently)
         timedelta = np.timedelta64(1, self.basic_interval)/np.timedelta64(1, 'ns')
 
         data = data.map_partitions(self._standardize_date_concat,

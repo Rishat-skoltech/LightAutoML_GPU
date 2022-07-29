@@ -5,6 +5,7 @@ from typing import Union
 import numpy as np
 import cupy as cp
 import cudf
+import dask_cudf
 
 from lightautoml.transformers.base import LAMLTransformer
 from lightautoml.dataset.np_pd_dataset import PandasDataset
@@ -279,20 +280,12 @@ class LogOdds_gpu(LAMLTransformer):
     _transform_checks = ()
     _fname_prefix = 'logodds_gpu'
 
-    def _num_to_logodds(self, data: cudf.DataFrame) -> cudf.DataFrame:
-        output = cp.clip(data.values, 1e-7, 1-1e-7)
-        output = cp.log(output / (1 - output))
-
-        if data.shape[0] > 0:
-            return cudf.DataFrame(output, columns=self.features, index=data.index)
-        else:
-            return cudf.DataFrame([], columns = self.features)
-
     def _transform_cupy(self, dataset: CupyTransformable) -> CupyDataset:
 
         dataset = dataset.to_cupy()
         data = dataset.data
         data = cp.clip(data, 1e-7, 1-1e-7)
+        
         data = cp.log(data / (1 - data))
 
         # create resulted
@@ -303,11 +296,18 @@ class LogOdds_gpu(LAMLTransformer):
 
     def _transform_daskcudf(self, dataset: DaskCudfDataset) -> DaskCudfDataset:
 
-        data = dataset.data.map_partitions(self._num_to_logodds,
-                                meta=cudf.DataFrame(columns=self.features)).persist()
+        out = dataset.data.persist().clip(1e-7, 1.-1e-7)
+        out = (1.*out/(1. - out)).map_partitions(
+            np.log
+        )
+        
+        out = out.rename(
+            columns = dict(zip(dataset.features, self.features))
+        )
 
         output = dataset.empty()
-        output.set_data(data, self.features, NumericRole(np.float32))
+        output.set_data(out, self.features, NumericRole(np.float32))
+
         return output
 
     def transform(self, dataset: CupyTransformable) -> GpuDataset:
@@ -352,6 +352,7 @@ class StandardScaler_gpu(LAMLTransformer):
 
         self.means = dataset.data.mean(skipna=True).compute().values
         self.stds = dataset.data.std(skipna=True).compute().values
+        self.stds[(self.stds == 0) | cp.isnan(self.stds)] = 1
         return self
 
     def fit(self, dataset: CupyTransformable):
@@ -387,7 +388,6 @@ class StandardScaler_gpu(LAMLTransformer):
 
         # transform
         data = (data - self.means) / self.stds
-        #data = cudf.DataFrame(data, index=data.index, columns=self.features)
 
         # create resulted
         output = dataset.empty()
@@ -510,7 +510,6 @@ class QuantileBinning_gpu(LAMLTransformer):
 
         # create resulted
         output = dataset.empty()
-        #new_data = cudf.DataFrame(new_data, index=dataset.data.index, columns=self.features)
         output.set_data(new_data, self.features, CategoryRole(np.int32, label_encoded=True))
 
         return output

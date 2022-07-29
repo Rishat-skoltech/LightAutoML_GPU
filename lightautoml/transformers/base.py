@@ -64,7 +64,7 @@ class LAMLTransformer:
             self.
 
         """
-        self.features = dataset.features
+        self.features = deepcopy(dataset.features)
         for check_func in self._fit_checks:
             check_func(dataset)
         return self
@@ -377,8 +377,11 @@ class ColumnsSelector(LAMLTransformer):
         """
         # to avoid coping if not needed
         if len(self.keys) == len(dataset.features) and all((x == y for (x, y) in zip(self.keys, dataset.features))):
-            return dataset
-        return dataset[:, self.keys]
+            out = dataset
+        else:
+            out = dataset[:, self.keys]
+
+        return out
 
 
 class ColumnwiseUnion(UnionTransformer):
@@ -529,6 +532,7 @@ class ConvertDataset(LAMLTransformer):
             Converted dataset.
 
         """
+
         return self.dataset_type.from_dataset(dataset)
 
 

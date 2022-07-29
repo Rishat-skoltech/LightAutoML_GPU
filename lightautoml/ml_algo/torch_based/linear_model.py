@@ -116,6 +116,7 @@ class CatLogisticRegression(CatLinear):
         x = super().forward(numbers, categories)
         x = torch.clamp(x, -50, 50)
         x = self.sigmoid(x)
+        x = torch.clamp(x, 0.001, 0.999)
 
         return x
 

@@ -78,15 +78,18 @@ class LGBSimpleFeatures_gpu(FeaturesPipeline):
         numerics = get_columns_by_role(train, 'Numeric')
         if len(numerics) > 0:
             dataset_type = type(train)
-            num_processing = SequentialTransformer([
-
-                ColumnsSelector(keys=numerics),
-                ConvertDataset(dataset_type=CupyDataset)
-                #ConvertDataset(dataset_type=dataset_type)
-
-            ])
+            if dataset_type is DaskCudfDataset:
+                num_processing = SequentialTransformer([
+                    ColumnsSelector(keys=numerics),
+                    ConvertDataset(dataset_type=dataset_type)
+                ])
+            else:
+                
+                num_processing = SequentialTransformer([
+                    ColumnsSelector(keys=numerics),
+                    ConvertDataset(dataset_type=CupyDataset)
+                ])
             transformers_list.append(num_processing)
-
         union_all = UnionTransformer(transformers_list)
         return union_all
 

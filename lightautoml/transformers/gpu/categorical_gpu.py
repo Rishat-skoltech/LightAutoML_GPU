@@ -14,7 +14,6 @@ from cupyx import scatter_add
 import cudf
 import dask_cudf
 
-
 from cuml.preprocessing import OneHotEncoder
 
 from lightautoml.transformers.base import LAMLTransformer
@@ -84,20 +83,20 @@ class LabelEncoder_gpu(LAMLTransformer):
         for i in range(8):
             map_streams.append(cp.cuda.stream.Stream())
 
-        for num,i in enumerate(subs.columns):
-            with map_streams[num%8]:
+        for num, i in enumerate(subs.columns):
+            with map_streams[num % 8]:
                 role = roles[i]
                 co = role.unknown
                 cnts = (
                     subs[i].value_counts(dropna=False)
-                    .reset_index()
-                    .sort_values([i, 'index'], ascending=[False, True])
-                    .set_index('index')
+                        .reset_index()
+                        .sort_values([i, 'index'], ascending=[False, True])
+                        .set_index('index')
                 )
                 ids = (cnts > co)[cnts.columns[0]]
                 vals = cnts[ids].index
                 self.dicts[i] = cudf.Series(cp.arange(vals.shape[0],
-                                            dtype=cp.int32) + 1, index=vals)
+                                                      dtype=cp.int32) + 1, index=vals)
         cp.cuda.Device().synchronize()
         return self
 
@@ -107,18 +106,18 @@ class LabelEncoder_gpu(LAMLTransformer):
         self.dicts = {}
 
         daskcudf_data = dataset.data
-        
+
         for i in daskcudf_data.columns:
             role = roles[i]
             co = role.unknown
             cnts = (
                 daskcudf_data[i].value_counts(dropna=False).compute().reset_index()
-                .sort_values([i, 'index'], ascending=[False, True]).set_index('index')
+                    .sort_values([i, 'index'], ascending=[False, True]).set_index('index')
             )
             ids = (cnts > co)[cnts.columns[0]]
             vals = cnts[ids].index
             self.dicts[i] = cudf.Series(cp.arange(vals.shape[0],
-                                        dtype=cp.int32) + 1, index=vals)
+                                                  dtype=cp.int32) + 1, index=vals)
         return self
 
     def fit(self, dataset: GpuNumericalDataset):
@@ -143,7 +142,7 @@ class LabelEncoder_gpu(LAMLTransformer):
     def encode_labels(self, df):
         new_arr = cudf.DataFrame(index=df.index, columns=self.features)
 
-        for n,i in enumerate(df.columns):
+        for n, i in enumerate(df.columns):
             out_col = new_arr.columns[n]
             # to be compatible with OrdinalEncoder
             if i in self.dicts:
@@ -154,8 +153,8 @@ class LabelEncoder_gpu(LAMLTransformer):
                         new_arr[out_col] = df[i].map(cur_dict).fillna(self._fillna_val)
                     else:
                         if not sl.all():
-                            new_arr[out_col] = cudf.Series(cp.ones(len(df[i]))*cp.nan,
-                                                 index=df[i].index, nan_as_null=False)
+                            new_arr[out_col] = cudf.Series(cp.ones(len(df[i])) * cp.nan,
+                                                           index=df[i].index, nan_as_null=False)
                         else:
                             new_arr[out_col][~sl] = cp.nan
 
@@ -171,13 +170,10 @@ class LabelEncoder_gpu(LAMLTransformer):
 
         dataset = dataset.to_cudf()
         data = dataset.data
-        # transform
-        #data = self.encode_labels(data).values
         data = self.encode_labels(data)
         data = data.astype(cp.float64)
         data = data.fillna(cp.nan).values
-        #data
-        # create resulted
+
         output = dataset.empty().to_cupy()
         output.set_data(data, self.features, self._output_role)
         return output
@@ -186,9 +182,9 @@ class LabelEncoder_gpu(LAMLTransformer):
 
         data = dataset.data
         data = data.map_partitions(self.encode_labels,
-                          meta=cudf.DataFrame(columns=self.features)\
-                              .astype(self._output_role.dtype) ).persist()
-                               
+                                   meta=cudf.DataFrame(columns=self.features) \
+                                   .astype(self._output_role.dtype)).persist()
+
         output = dataset.empty()
         output.set_data(data, self.features, self._output_role)
 
@@ -212,6 +208,7 @@ class LabelEncoder_gpu(LAMLTransformer):
         else:
             return self._transform_cupy(dataset)
 
+
 class OHEEncoder_gpu(LAMLTransformer):
     """
     Simple OneHotEncoder over label encoded categories (GPU version).
@@ -227,10 +224,10 @@ class OHEEncoder_gpu(LAMLTransformer):
         return self._features
 
     def __init__(
-        self,
-        make_sparse: Optional[bool] = False,
-        total_feats_cnt: Optional[int] = None,
-        dtype: type = cp.float32
+            self,
+            make_sparse: Optional[bool] = False,
+            total_feats_cnt: Optional[int] = None,
+            dtype: type = cp.float32
     ):
         """
 
@@ -245,8 +242,8 @@ class OHEEncoder_gpu(LAMLTransformer):
         self.dtype = dtype
 
         if self.make_sparse is None:
-            assert self.total_feats_cnt is not None,\
-                   'Param total_feats_cnt should be defined if make_sparse is None'
+            assert self.total_feats_cnt is not None, \
+                'Param total_feats_cnt should be defined if make_sparse is None'
 
     def _fit_cupy(self, dataset: GpuNumericalDataset):
 
@@ -258,14 +255,14 @@ class OHEEncoder_gpu(LAMLTransformer):
         # infer make sparse
         if self.make_sparse is None:
             fill_rate = (self.total_feats_cnt /
-                (self.total_feats_cnt - max_idx.shape[0] + max_idx.sum())
-            )
+                         (self.total_feats_cnt - max_idx.shape[0] + max_idx.sum())
+                         )
             self.make_sparse = fill_rate < 0.2
 
         # create ohe
         self.ohe = OneHotEncoder(categories='auto',
-                           dtype=self.dtype, sparse=self.make_sparse,
-                           handle_unknown='ignore')
+                                 dtype=self.dtype, sparse=self.make_sparse,
+                                 handle_unknown='ignore')
         self.ohe.fit(data)
 
         features = []
@@ -284,23 +281,22 @@ class OHEEncoder_gpu(LAMLTransformer):
         # infer make sparse
         if self.make_sparse is None:
             fill_rate = (
-                self.total_feats_cnt /
-                (self.total_feats_cnt - max_idx.shape[0] + max_idx.sum())
+                    self.total_feats_cnt /
+                    (self.total_feats_cnt - max_idx.shape[0] + max_idx.sum())
             )
             self.make_sparse = fill_rate < 0.2
 
         # create ohe
         self.ohe = OneHotEncoder(categories='auto',
-                           dtype=self.dtype, sparse=self.make_sparse,
-                           handle_unknown='ignore')
+                                 dtype=self.dtype, sparse=self.make_sparse,
+                                 handle_unknown='ignore')
 
         max_val = int(max_idx.max())
-        temp_data = cp.ones((len(data.columns), max_val+1)) *(max_val+1)
-        for i,col in enumerate(data.columns):
+        temp_data = cp.ones((len(data.columns), max_val + 1)) * (max_val + 1)
+        for i, col in enumerate(data.columns):
             uniques = data[col].unique().compute().values
             temp_data[i][:uniques.shape[0]] = uniques
 
-        #temp_data = cudf.DataFrame(temp_data.T, columns=data.columns)
         self.ohe.fit(temp_data)
 
         features = []
@@ -355,9 +351,9 @@ class OHEEncoder_gpu(LAMLTransformer):
 
     def _transform_daskcudf(self, dataset: DaskCudfDataset) -> DaskCudfDataset:
 
-        data = dataset.data.map_partitions(self._call_ohe, 
-                          meta=cudf.DataFrame(columns=self.features,
-                              index=dataset.data.index) )
+        data = dataset.data.map_partitions(self._call_ohe,
+                                           meta=cudf.DataFrame(columns=self.features,
+                                                               index=dataset.data.index))
 
         output = dataset.empty()
         if self.make_sparse:
@@ -435,6 +431,7 @@ class FreqEncoder_gpu(LabelEncoder_gpu):
 
         return self
 
+
 class TargetEncoder_gpu(LAMLTransformer):
     """
     Out-of-fold target encoding (GPU version).
@@ -460,10 +457,10 @@ class TargetEncoder_gpu(LAMLTransformer):
 
     @staticmethod
     def dask_add_at_1d(
-        data: cudf.DataFrame,
-        col: List[str],
-        val: Union[int, str],
-        size: int
+            data: cudf.DataFrame,
+            col: List[str],
+            val: Union[int, str],
+            size: int
     ) -> cudf.DataFrame:
 
         output = cp.zeros(int(size), dtype=cp.float32)
@@ -471,14 +468,14 @@ class TargetEncoder_gpu(LAMLTransformer):
             scatter_add(output, data[col].values, val)
         else:
             scatter_add(output, data[col].values, data[val].values)
-        return cudf.DataFrame([output])#, columns=np.arange(size))
+        return cudf.DataFrame([output])
 
     @staticmethod
     def dask_add_at_2d(
-        data: cudf.DataFrame,
-        cols: List[str],
-        val: Union[int, str],
-        shape: Tuple[int, int]
+            data: cudf.DataFrame,
+            cols: List[str],
+            val: Union[int, str],
+            shape: Tuple[int, int]
     ) -> cudf.DataFrame:
 
         output = cp.zeros(shape, dtype=cp.float32)
@@ -486,11 +483,11 @@ class TargetEncoder_gpu(LAMLTransformer):
             scatter_add(output, (data[cols[0]].values, data[cols[-1]].values), val)
         else:
             scatter_add(output, (data[cols[0]].values, data[cols[-1]].values), data[val].values)
-        return cudf.DataFrame(output)#, columns=np.arange(n_folds))
+        return cudf.DataFrame(output)
 
     @staticmethod
-    def find_candidates(data, vec_col, 
-                        fold_col, oof_sum, 
+    def find_candidates(data, vec_col,
+                        fold_col, oof_sum,
                         oof_count, alphas, folds_prior):
         """Find oof candidates for metric scroing.
 
@@ -511,7 +508,7 @@ class TargetEncoder_gpu(LAMLTransformer):
         vec = data[vec_col].values
         folds = data[fold_col].values
         candidates = ((oof_sum[vec, folds, cp.newaxis] + alphas * folds_prior[folds, cp.newaxis])
-                      /(oof_count[vec, folds, cp.newaxis] + alphas)).astype(cp.float32)
+                      / (oof_count[vec, folds, cp.newaxis] + alphas)).astype(cp.float32)
         return cudf.DataFrame(candidates, index=data.index)
 
     @staticmethod
@@ -530,7 +527,7 @@ class TargetEncoder_gpu(LAMLTransformer):
         target = data[target_col].values[:, cp.newaxis]
         candidates = data[data.columns.difference([target_col])].values
         scores = - (target * cp.log(candidates)
-                    + (1 - target) 
+                    + (1 - target)
                     * cp.log(1 - candidates)).mean(axis=0)
         return cudf.DataFrame([scores])
 
@@ -567,8 +564,8 @@ class TargetEncoder_gpu(LAMLTransformer):
         """
 
         target = target[:, cp.newaxis]
-        scores = - (target * cp.log(candidates) 
-                    + (1 - target) 
+        scores = - (target * cp.log(candidates)
+                    + (1 - target)
                     * cp.log(1 - candidates)).mean(axis=0)
         idx = scores.argmin()
 
@@ -597,7 +594,7 @@ class TargetEncoder_gpu(LAMLTransformer):
 
         super().fit_transform(dataset)
 
-    def fit_transform(self, dataset: GpuNumericalDataset) ->GpuNumericalDataset:
+    def fit_transform(self, dataset: GpuNumericalDataset) -> GpuNumericalDataset:
         """Calc oof encoding and save encoding stats for new data (GPU version).
 
         Args:
@@ -617,8 +614,8 @@ class TargetEncoder_gpu(LAMLTransformer):
     def _fit_transform_daskcudf(self, dataset: DaskCudfDataset) -> DaskCudfDataset:
 
         super().fit(dataset)
-        score_func = self.dask_binary_score_func if dataset.task.name == 'binary'\
-                                               else self.dask_reg_score_func
+        score_func = self.dask_binary_score_func if dataset.task.name == 'binary' \
+            else self.dask_reg_score_func
 
         alphas = cp.array(self.alphas)[cp.newaxis, :]
         self.encodings = []
@@ -626,25 +623,24 @@ class TargetEncoder_gpu(LAMLTransformer):
 
         target_name = dataset.target.name
         folds_name = dataset.folds.name
-
         data = dataset.data.persist()
         data[folds_name] = dataset.folds
         data[target_name] = dataset.target
 
         n_folds = int(data[folds_name].max().compute() + 1)
 
-        f_sum = data.map_partitions(self.dask_add_at_1d, 
-                        folds_name, target_name, n_folds,
-                        meta=cudf.DataFrame(columns=np.arange(n_folds), dtype='f8') )\
-                        .sum().compute().values
+        f_sum = data.map_partitions(self.dask_add_at_1d,
+                                    folds_name, target_name, n_folds,
+                                    meta=cudf.DataFrame(columns=np.arange(n_folds), dtype='f8')) \
+            .sum().compute().values
         f_count = data.map_partitions(self.dask_add_at_1d,
-                        folds_name, 1, n_folds,
-                        meta=cudf.DataFrame(columns=np.arange(n_folds), dtype='i8'))\
-                        .sum().compute().values
+                                      folds_name, 1, n_folds,
+                                      meta=cudf.DataFrame(columns=np.arange(n_folds), dtype='i8')) \
+            .sum().compute().values
 
         folds_prior = (f_sum.sum() - f_sum) / (f_count.sum() - f_count)
 
-        oof_feats = dataset.data#data[dataset.features]#.persist()
+        oof_feats = dataset.data
 
         for n in range(oof_feats.shape[1]):
             vec_col = data.columns[n]
@@ -652,12 +648,12 @@ class TargetEncoder_gpu(LAMLTransformer):
 
             f_sum = data.map_partitions(self.dask_add_at_2d, [vec_col, folds_name],
                                         target_name, (enc_dim, n_folds),
-                                        meta=cudf.DataFrame(columns=np.arange(n_folds), 
-                                             dtype='f8') ).compute().values
+                                        meta=cudf.DataFrame(columns=np.arange(n_folds),
+                                                            dtype='f8')).compute().values
             f_count = data.map_partitions(self.dask_add_at_2d, [vec_col, folds_name],
                                           1, (enc_dim, n_folds),
                                           meta=cudf.DataFrame(columns=np.arange(n_folds),
-                                              dtype='i8') ).compute().values
+                                                              dtype='i8')).compute().values
 
             f_sum_final = f_sum.reshape((-1, enc_dim, n_folds)).sum(axis=0)
             f_count_final = f_count.reshape((-1, enc_dim, n_folds)).sum(axis=0)
@@ -671,25 +667,33 @@ class TargetEncoder_gpu(LAMLTransformer):
             oof_count = t_count - f_count_final
             # calc candidates alpha
             candidates = data.map_partitions(self.find_candidates, vec_col,
-                                    folds_name, oof_sum, oof_count, alphas,
-                                    folds_prior).persist()
+                                             folds_name, oof_sum, oof_count, alphas,
+                                             folds_prior).persist()
 
             candidates[target_name] = dataset.target
 
-            scores = candidates.map_partitions(score_func, 
-                                target_name).compute().mean(axis=0).values
+            scores = candidates.map_partitions(score_func,
+                                               target_name).compute().mean(axis=0).values
             idx = scores.argmin().get()
 
-            oof_feats[vec_col] = candidates[candidates.columns[idx]]#.persist()
+            oof_feats[vec_col] = candidates[candidates.columns[idx]]
             # calc best encoding
-            enc = ((t_sum[:, 0] + alphas[0, idx] * prior) 
-                    / (t_count[:, 0] + alphas[0, idx])).astype(cp.float32)
+            enc = ((t_sum[:, 0] + alphas[0, idx] * prior)
+                   / (t_count[:, 0] + alphas[0, idx])).astype(cp.float32)
 
             self.encodings.append(enc)
 
+        assert len(dataset.features) == len(self.features)
+        col_map = dict(zip(dataset.features, self.features))
+
+        oof_feats = oof_feats.rename(columns=col_map)
+
         output = dataset.empty()
         self.output_role = NumericRole(cp.float32, prob=output.task.name == 'binary')
+
         output.set_data(oof_feats.persist(), self.features, self.output_role)
+        output.data.rename()
+
         return output
 
     def _fit_transform_cupy(self, dataset: GpuNumericalDataset) -> CupyDataset:
@@ -702,10 +706,10 @@ class TargetEncoder_gpu(LAMLTransformer):
         dataset = dataset.to_cupy()
         data = dataset.data
 
-        target = dataset.target#.astype(cp.int32)
-        score_func = self.binary_score_func\
-                     if dataset.task.name == 'binary'\
-                     else self.reg_score_func
+        target = dataset.target
+        score_func = self.binary_score_func \
+            if dataset.task.name == 'binary' \
+            else self.reg_score_func
 
         folds = dataset.folds
         n_folds = int(folds.max() + 1)
@@ -730,7 +734,7 @@ class TargetEncoder_gpu(LAMLTransformer):
             map_streams.append(cp.cuda.stream.Stream())
 
         for n in range(data.shape[1]):
-            with map_streams[n%8]:
+            with map_streams[n % 8]:
                 vec = data[:, n]
 
                 # calc folds stats
@@ -751,15 +755,15 @@ class TargetEncoder_gpu(LAMLTransformer):
                 oof_count = t_count - f_count
                 # calc candidates alpha
                 candidates = ((oof_sum[vec, folds, cp.newaxis]
-                              + alphas * folds_prior[folds, cp.newaxis])
-                              / (oof_count[vec, folds, cp.newaxis] + alphas))\
-                              .astype(cp.float32)
+                               + alphas * folds_prior[folds, cp.newaxis])
+                              / (oof_count[vec, folds, cp.newaxis] + alphas)) \
+                    .astype(cp.float32)
                 idx = score_func(candidates, target)
 
                 # write best alpha
                 oof_feats[:, n] = candidates[:, idx]
                 # calc best encoding
-                enc = ((t_sum[:, 0] + alphas[0, idx] * prior) 
+                enc = ((t_sum[:, 0] + alphas[0, idx] * prior)
                        / (t_count[:, 0] + alphas[0, idx])).astype(cp.float32)
 
                 self.encodings.append(enc)
@@ -786,6 +790,13 @@ class TargetEncoder_gpu(LAMLTransformer):
         else:
             return self._transform_cupy(dataset)
 
+    def create_output(self, df):
+        new_arr = cudf.DataFrame(index=df.index, columns=self.features)
+        assert len(new_arr.columns) == len(df.columns)
+        for i, col in df.columns:
+            new_arr[self.features[i]] = df[col]
+        return new_arr
+
     def _transform_daskcudf(self, dataset: GpuNumericalDataset):
 
         super().transform(dataset)
@@ -793,12 +804,13 @@ class TargetEncoder_gpu(LAMLTransformer):
 
         def get_encodings(data, encodings, features):
             data = data.values
-            out = cp.zeros(data.shape,  dtype=cp.float32)
+            out = cp.zeros(data.shape, dtype=cp.float32)
             for n, enc in enumerate(encodings):
                 out[:, n] = enc[data[:, n]]
-            return cudf.DataFrame(out, columns = features)
+            return cudf.DataFrame(out, columns=features)
 
-        res = data.map_partitions(get_encodings, self.encodings, self.features, meta=cudf.DataFrame(columns=self.features)).persist()
+        res = data.map_partitions(get_encodings, self.encodings, self.features,
+                                  meta=cudf.DataFrame(columns=self.features)).persist()
         output = dataset.empty()
         output.set_data(res, self.features, self.output_role)
 
@@ -872,7 +884,7 @@ class MultiClassTargetEncoder_gpu(LAMLTransformer):
             scatter_add(output, (cols[0], data[cols[-1]].values), val)
         else:
             scatter_add(output, (data[cols[0]].values, data[cols[-1]].values), val)
-        return cudf.DataFrame(output)#, columns=np.arange(n_folds))
+        return cudf.DataFrame(output)
 
     @staticmethod
     def dask_add_at_3d(data, cols, val, shape):
@@ -882,16 +894,14 @@ class MultiClassTargetEncoder_gpu(LAMLTransformer):
         else:
             scatter_add(output, (data[cols[0]].values, data[cols[1]].values, data[cols[-1]].values), val)
 
-        output = output.reshape((shape[0], shape[1]*shape[2]))
-        return cudf.DataFrame(output)#, columns=np.arange(n_folds))
+        output = output.reshape((shape[0], shape[1] * shape[2]))
+        return cudf.DataFrame(output)
 
     @staticmethod
     def dask_score_func(data, target_col, shape):
         target = data[target_col].values
         target = target[:, cp.newaxis, cp.newaxis]
-        #the fact that target_col is the last is hardcoded here
         candidates = data[data.columns[:-1]].values
-        #reshape it here
         candidates = candidates.reshape(data.shape[0], shape[0], shape[1])
 
         scores = -cp.log(cp.take_along_axis(candidates, target, axis=1)).mean(axis=0)[0]
@@ -901,14 +911,14 @@ class MultiClassTargetEncoder_gpu(LAMLTransformer):
     def find_candidates(data, vec_col, fold_col, oof_sum, oof_count, alphas, folds_prior):
         vec = data[vec_col].values
         folds = data[fold_col].values
-        candidates = ((oof_sum[vec, :, folds, cp.newaxis] 
+        candidates = ((oof_sum[vec, :, folds, cp.newaxis]
                        + alphas * folds_prior[folds, :, cp.newaxis])
-                       / (oof_count[vec, :, folds, cp.newaxis] + alphas))\
-                       .astype(cp.float32)
+                      / (oof_count[vec, :, folds, cp.newaxis] + alphas)) \
+            .astype(cp.float32)
 
         candidates /= candidates.sum(axis=1, keepdims=True)
         candidates = candidates.reshape(data.shape[0], -1)
-        return cudf.DataFrame(candidates, index = data.index)
+        return cudf.DataFrame(candidates, index=data.index)
 
     def find_prior(self, target, n_classes):
         prior = cast(cp.ndarray, cp.arange(n_classes)[:, cp.newaxis] == target).mean(axis=1)
@@ -942,9 +952,9 @@ class MultiClassTargetEncoder_gpu(LAMLTransformer):
         target_name = dataset.target.name
         folds_name = dataset.folds.name
 
-        data = dataset.data
-        data[folds_name] = dataset.folds#.astype('i8')
-        data[target_name] = dataset.target#.astype('i8')
+        data = dataset.data.persist()
+        data[folds_name] = dataset.folds.persist()
+        data[target_name] = dataset.target.persist()
 
         n_folds = int(data[folds_name].max().compute() + 1)
         n_classes = int(dataset.target.max().compute() + 1)
@@ -955,25 +965,25 @@ class MultiClassTargetEncoder_gpu(LAMLTransformer):
         f_sum = cp.zeros((n_classes, n_folds), dtype=cp.float32)
         f_count = cp.zeros((1, n_folds), dtype=cp.float32)
 
-        f_sum = data.map_partitions(self.dask_add_at_2d, 
-                      [target_name, folds_name], 1, (n_classes, n_folds),
-                      meta=cudf.DataFrame(columns=np.arange(n_folds), dtype='f8') )
+        f_sum = data.map_partitions(self.dask_add_at_2d,
+                                    [target_name, folds_name], 1, (n_classes, n_folds),
+                                    meta=cudf.DataFrame(columns=np.arange(n_folds), dtype='f8'))
         f_count = data.map_partitions(self.dask_add_at_2d,
-                      [0, folds_name], 1, (1, n_folds),
-                      meta=cudf.DataFrame(columns=np.arange(n_folds), dtype='i8'))
+                                      [0, folds_name], 1, (1, n_folds),
+                                      meta=cudf.DataFrame(columns=np.arange(n_folds), dtype='i8'))
 
         f_sum_final = cp.zeros((n_classes, n_folds))
         f_count_final = cp.zeros((1, n_folds))
 
         for i in range(n_classes):
-            f_sum_final[i] = f_sum.compute()\
-                            [f_sum.columns][f_sum.index.compute().values==i]\
-                            .sum().values
+            f_sum_final[i] = f_sum.compute() \
+                [f_sum.columns][f_sum.index.compute().values == i] \
+                .sum().values
 
         f_count_final[0] = f_count.sum(axis=0).compute().values
 
         folds_prior = ((f_sum_final.sum(axis=1, keepdims=True) - f_sum_final)
-                      / (f_count_final.sum(axis=1, keepdims=True) - f_count_final)).T
+                       / (f_count_final.sum(axis=1, keepdims=True) - f_count_final)).T
 
         oof_feats = []
 
@@ -982,25 +992,25 @@ class MultiClassTargetEncoder_gpu(LAMLTransformer):
             for j in range(n_classes):
                 self._features.append('{0}_{1}__{2}'.format('multioof', j, i))
 
-        for n,col in enumerate(dataset.features):
-            vec_col = col#data.columns[n]
+        for n, col in enumerate(dataset.features):
+            vec_col = col
 
             enc_dim = int(data[vec_col].max().compute() + 1)
 
             f_sum = data.map_partitions(self.dask_add_at_3d,
-                        [vec_col, target_name, folds_name],
-                        1, (enc_dim, n_classes, n_folds),
-                        meta=cudf.DataFrame(np.empty((enc_dim,n_classes*n_folds)),
-                                            dtype='f8')
-                     ).compute().values
+                                        [vec_col, target_name, folds_name],
+                                        1, (enc_dim, n_classes, n_folds),
+                                        meta=cudf.DataFrame(np.empty((enc_dim, n_classes * n_folds)),
+                                                            dtype='f8')
+                                        ).compute().values
             f_count = data.map_partitions(self.dask_add_at_3d,
-                        [vec_col, 0, folds_name],
-                        1, (enc_dim, 1, n_folds),
-                        meta=cudf.DataFrame(np.empty((enc_dim,n_folds)),
-                                            dtype='i8')
-                       ).compute().values
+                                          [vec_col, 0, folds_name],
+                                          1, (enc_dim, 1, n_folds),
+                                          meta=cudf.DataFrame(np.empty((enc_dim, n_folds)),
+                                                              dtype='i8')
+                                          ).compute().values
 
-            f_sum_final = f_sum.reshape((-1, enc_dim, n_folds*n_classes)).sum(axis=0)
+            f_sum_final = f_sum.reshape((-1, enc_dim, n_folds * n_classes)).sum(axis=0)
             f_count_final = f_count.reshape((-1, enc_dim, n_folds)).sum(axis=0)
 
             f_sum_final = f_sum_final.reshape((enc_dim, n_classes, n_folds))
@@ -1011,36 +1021,36 @@ class MultiClassTargetEncoder_gpu(LAMLTransformer):
             oof_sum = t_sum - f_sum_final
             oof_count = t_count - f_count_final
             candidates = data.map_partitions(self.find_candidates, vec_col,
-                           folds_name, oof_sum, oof_count, alphas, folds_prior,
-                           meta=cudf.DataFrame(columns=np.arange(len(self.alphas)*n_classes),
-                                               dtype='f8') 
-                         )
+                                             folds_name, oof_sum, oof_count, alphas, folds_prior,
+                                             meta=cudf.DataFrame(columns=np.arange(len(self.alphas) * n_classes),
+                                                                 dtype='f8')
+                                             )
 
             candidates[target_name] = data[target_name]
 
             scores = candidates.map_partitions(self.dask_score_func, target_name,
-                            (n_classes, len(self.alphas)),
-                            meta=cudf.DataFrame(columns=np.arange(len(self.alphas)), 
-                                                dtype='f8')
-                      ).compute().mean(axis=0).values
+                                               (n_classes, len(self.alphas)),
+                                               meta=cudf.DataFrame(columns=np.arange(len(self.alphas)),
+                                                                   dtype='f8')
+                                               ).compute().mean(axis=0).values
             idx = scores.argmin().get()
-            orig_cols = np.arange(idx*n_classes, (idx+1)*n_classes)
-            new_cols = self.features[n*n_classes: (n+1)*n_classes]
+            orig_cols = np.arange(idx * n_classes, (idx + 1) * n_classes)
+            new_cols = self.features[n * n_classes: (n + 1) * n_classes]
             col_map = dict(zip(orig_cols, new_cols))
-            oof_feats.append(candidates[candidates.\
-                                 columns[idx*n_classes:(idx+1)*n_classes]]\
-                                     .rename( columns = col_map ) 
-            )
-            enc = ((t_sum[..., 0] + alphas[0, 0, idx] * prior) 
-                    / (t_count[..., 0] + alphas[0, 0, idx]))\
-                  .astype(cp.float32)
+            oof_feats.append(candidates[candidates. \
+                             columns[idx * n_classes:(idx + 1) * n_classes]] \
+                             .rename(columns=col_map)
+                             )
+            enc = ((t_sum[..., 0] + alphas[0, 0, idx] * prior)
+                   / (t_count[..., 0] + alphas[0, 0, idx])) \
+                .astype(cp.float32)
             enc /= enc.sum(axis=1, keepdims=True)
 
             self.encodings.append(enc)
 
-        orig_cols = np.arange(n_classes*len(dataset.features))
+        orig_cols = np.arange(n_classes * len(dataset.features))
         col_map = dict(zip(orig_cols, self.features))
-        oof_feats = dask_cudf.concat(oof_feats, axis=1).rename(columns = col_map)
+        oof_feats = dask_cudf.concat(oof_feats, axis=1).rename(columns=col_map)
         output = dataset.empty()
         output.set_data(oof_feats, self.features, NumericRole(cp.float32, prob=True))
         return output
@@ -1059,7 +1069,7 @@ class MultiClassTargetEncoder_gpu(LAMLTransformer):
         # convert to accepted dtype and get attributes
         dataset = dataset.to_cupy()
         data = dataset.data
-        target = dataset.target#.astype(cp.int32)
+        target = dataset.target
         n_classes = int(target.max() + 1)
         self.n_classes = n_classes
         folds = dataset.folds
@@ -1074,8 +1084,8 @@ class MultiClassTargetEncoder_gpu(LAMLTransformer):
         scatter_add(f_sum, (target, folds), 1)
         scatter_add(f_count, (0, folds), 1)
         # N_classes x N_folds
-        folds_prior = ((f_sum.sum(axis=1, keepdims=True) - f_sum) 
-                      /(f_count.sum(axis=1, keepdims=True) - f_count)).T
+        folds_prior = ((f_sum.sum(axis=1, keepdims=True) - f_sum)
+                       / (f_count.sum(axis=1, keepdims=True) - f_count)).T
         oof_feats = cp.zeros(data.shape + (n_classes,), dtype=cp.float32)
 
         self._features = []
@@ -1101,8 +1111,8 @@ class MultiClassTargetEncoder_gpu(LAMLTransformer):
             oof_sum = t_sum - f_sum
             oof_count = t_count - f_count
 
-            candidates = ((oof_sum[vec, :, folds, cp.newaxis] 
-                          + alphas * folds_prior[folds, :, cp.newaxis])
+            candidates = ((oof_sum[vec, :, folds, cp.newaxis]
+                           + alphas * folds_prior[folds, :, cp.newaxis])
                           / (oof_count[vec, :, folds, cp.newaxis] + alphas)).astype(cp.float32)
 
             # norm over 1 axis
@@ -1143,19 +1153,19 @@ class MultiClassTargetEncoder_gpu(LAMLTransformer):
 
         def get_encodings(data, n_classes, encodings, features):
             data = data.values
-            out = cp.zeros(data.shape + (n_classes,),  dtype=cp.float32)
+            out = cp.zeros(data.shape + (n_classes,), dtype=cp.float32)
             for n, enc in enumerate(encodings):
                 out[:, n] = enc[data[:, n]]
             out = out.reshape((data.shape[0], -1))
 
-            return cudf.DataFrame(out, columns = features)
+            return cudf.DataFrame(out, columns=features)
 
-        res = data.map_partitions(get_encodings, 
-                      self.n_classes, self.encodings,
-                      self.features, meta=cudf.DataFrame(columns=self.features))\
-                      .persist()
+        res = data.map_partitions(get_encodings,
+                                  self.n_classes, self.encodings,
+                                  self.features, meta=cudf.DataFrame(columns=self.features)) \
+            .persist()
         output = dataset.empty()
-        output.set_data(res, self.features, self.output_role)
+        output.set_data(res, self.features, NumericRole(cp.float32, prob=True))
         return output
 
     def _transform_cupy(self, dataset: GpuNumericalDataset) -> CupyDataset:
@@ -1193,11 +1203,11 @@ class CatIntersections_gpu(LabelEncoder_gpu):
     _fname_prefix = 'inter_gpu'
 
     def __init__(
-        self,
-        subs: Optional[int] = None,
-        random_state: int = 42,
-        intersections: Optional[Sequence[Sequence[str]]] = None,
-        max_depth: int = 2
+            self,
+            subs: Optional[int] = None,
+            random_state: int = 42,
+            intersections: Optional[Sequence[Sequence[str]]] = None,
+            max_depth: int = 2
     ):
         """Create label encoded intersection columns for categories.
 
@@ -1256,8 +1266,8 @@ class CatIntersections_gpu(LabelEncoder_gpu):
                 col_names.append(name)
                 new_df.append(df.map_partitions(self._make_category, comb).persist())
                 roles[name] = CategoryRole(object,
-                                  unknown=max((dataset.roles[x].unknown for x in comb)),
-                                  label_encoded=True)
+                                           unknown=max((dataset.roles[x].unknown for x in comb)),
+                                           label_encoded=True)
             for data in new_df:
                 mapper = dict(zip(np.arange(len(col_names)), col_names))
             new_df = dask_cudf.concat(new_df, axis=1).rename(columns=mapper).persist()
@@ -1357,15 +1367,15 @@ class OrdinalEncoder_gpu(LabelEncoder_gpu):
                 cnts = subs[i].value_counts(dropna=False)
                 cnts = cnts.astype(cp.float32)[cnts > co].reset_index()
                 if len(cnts) > 1500:
-                    cnts = cudf.Series(cnts['index'][:1500].astype(str).rank(), 
+                    cnts = cudf.Series(cnts['index'][:1500].astype(str).rank(),
                                        index=cnts['index'][:1500],
                                        dtype=cp.float32)
                 else:
-                    cnts = cudf.Series(cnts['index'].astype(str).rank(), 
+                    cnts = cudf.Series(cnts['index'].astype(str).rank(),
                                        index=cnts['index'],
                                        dtype=cp.float32)
                 cnts = cnts.append(cudf.Series([cnts.shape[0] + 1],
-                                   index=[cp.nan], dtype=cp.float32))
+                                               index=[cp.nan], dtype=cp.float32))
                 self.dicts[i] = cnts
         return self
 
@@ -1392,16 +1402,16 @@ class OrdinalEncoder_gpu(LabelEncoder_gpu):
                 cnts = data[i].value_counts(dropna=False)
                 cnts = cnts.astype(cp.float32)[cnts > co].compute().reset_index()
                 if len(cnts) > 1500:
-                    cnts = cudf.Series(cnts['index'][:1500].astype(str).rank(), 
+                    cnts = cudf.Series(cnts['index'][:1500].astype(str).rank(),
                                        index=cnts['index'][:1500],
                                        dtype=cp.float32)
                 else:
-                    cnts = cudf.Series(cnts['index'].astype(str).rank(), 
+                    cnts = cudf.Series(cnts['index'].astype(str).rank(),
                                        index=cnts['index'],
                                        dtype=cp.float32)
                 cnts = cnts.append(cudf.Series([cnts.shape[0] + 1],
-                                   index=[cp.nan],
-                                   dtype=cp.float32))
+                                               index=[cp.nan],
+                                               dtype=cp.float32))
                 self.dicts[i] = cnts
 
         return self

@@ -33,12 +33,13 @@ from lightautoml.dataset.utils import roles_parser
 from lightautoml.tasks import Task
 from lightautoml.reader.guess_roles import calc_encoding_rules
 from lightautoml.reader.guess_roles import calc_category_rules
-from lightautoml.reader.guess_roles import rule_based_roles_guess
+
 from lightautoml.reader.guess_roles import rule_based_cat_handler_guess
+from .guess_roles_gpu import rule_based_roles_guess_gpu
 from .guess_roles_gpu import get_numeric_roles_stat_gpu
 from .guess_roles_gpu import get_category_roles_stat_gpu
 from .guess_roles_gpu import get_null_scores_gpu
-from lightautoml.reader.utils import set_sklearn_folds
+from ..utils import set_sklearn_folds
 from lightautoml.reader.base import PandasToPandasReader
 
 from time import perf_counter
@@ -243,7 +244,6 @@ class CudfReader(PandasToPandasReader):
                                   self.roles, task=self.task, **kwargs)
 
         print("cudf reader:", perf_counter() - st)
-
         return dataset
 
     def _create_target(self, target: Series):
@@ -405,28 +405,29 @@ class CudfReader(PandasToPandasReader):
             # upd stat with rules
 
             stat = calc_encoding_rules(stat, **advanced_roles_params)
-            new_roles_dict = {**new_roles_dict, **rule_based_roles_guess(stat)}
+            new_roles_dict = {**new_roles_dict, **rule_based_roles_guess_gpu(stat)}
             top_scores.append(stat['max_score'])
 
         # # # guess categories handling type
-        stat = get_category_roles_stat_gpu(dataset,
+        stat, dtypes = get_category_roles_stat_gpu(dataset,
                                            random_state=self.random_state,
                                            subsample=self.samples, n_jobs=self.n_jobs)
         if len(stat) > 0:
             # upd stat with rules
 
             stat = calc_category_rules(stat)
+            #stat['dtype'] = dtypes
             new_roles_dict = {**new_roles_dict, \
-                              **rule_based_cat_handler_guess(stat)}
+                              **rule_based_cat_handler_guess(stat, dtypes)}
             top_scores.append(stat['max_score'])
 
         # # get top scores of feature
         if len(top_scores) > 0:
-            top_scores = pd.concat(top_scores, axis=0)
+            top_scores = cudf.concat(top_scores, axis=0).to_pandas()
 
             null_scores = get_null_scores_gpu(dataset, top_scores.index.values,
                                               random_state=self.random_state,
-                                              subsample=self.samples)
+                                              subsample=self.samples).to_pandas()
             top_scores = pd.concat([null_scores, top_scores], axis=1).max(axis=1)
 
             rejected = list(top_scores[top_scores < drop_co].index.values)

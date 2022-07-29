@@ -23,6 +23,7 @@ from lightautoml.tasks.losses import TorchLossWrapper
 logger = logging.getLogger(__name__)
 ArrayOrSparseMatrix = Union[cp.ndarray, sparse_cupy.spmatrix]
 
+
 def convert_cupy_scipy_sparse_to_torch_float(matrix: sparse_cupy.spmatrix, dev_id: int) -> torch.Tensor:
     """Convert scipy sparse matrix to torch sparse tensor (GPU version).
 
@@ -257,7 +258,7 @@ class TorchBasedLinearEstimator:
             Tuple (numeric_features, `None`).
 
         """
-        assert len(self.categorical_idx) == 0, 'Support only numeric with sparse matrix'
+        assert len(self.categorical_idx['int']) == 0, 'Support only numeric with sparse matrix'
         data = convert_cupy_scipy_sparse_to_torch_float(data, dev_id)
         return data, None
 
@@ -274,14 +275,14 @@ class TorchBasedLinearEstimator:
 
         """
 
-        if 0 < len(self.categorical_idx) < data.shape[1]:
+        if 0 < len(self.categorical_idx['int']) < data.shape[1]:
 
-            data_cat = torch.as_tensor(data[:, self.categorical_idx].astype(cp.int32), device=f'cuda:{dev_id}')
+            data_cat = torch.as_tensor(data[:, self.categorical_idx['int']].astype(cp.int32), device=f'cuda:{dev_id}')
             
-            data = torch.as_tensor(data[:, np.setdiff1d(np.arange(data.shape[1]), self.categorical_idx)].astype(cp.float32), device=f'cuda:{dev_id}')
+            data = torch.as_tensor(data[:, np.setdiff1d(np.arange(data.shape[1]), self.categorical_idx['int'])].astype(cp.float32), device=f'cuda:{dev_id}')
             return data, data_cat
 
-        elif len(self.categorical_idx) == 0:
+        elif len(self.categorical_idx['int']) == 0:
             data = torch.as_tensor(data.astype(cp.float32), device=f'cuda:{dev_id}')
             return data, None
 
@@ -295,7 +296,7 @@ class TorchBasedLinearEstimator:
         data_cat: Optional[torch.Tensor],
         y: torch.Tensor = None,
         weights: Optional[torch.Tensor] = None,
-        c: float = 1
+        c: float = 1.
     ):
         """Optimize single model.
 
@@ -323,7 +324,7 @@ class TorchBasedLinearEstimator:
         def closure():
             opt.zero_grad()
             output = self.model(data, data_cat)
-            loss = self._loss_fn(y, output, weights, c)
+            loss = self._loss_fn(y, output, weights, c).cuda()
             if loss.requires_grad:
                 loss.backward()
             results.append(loss.item())
@@ -358,7 +359,7 @@ class TorchBasedLinearEstimator:
 
         all_params = torch.cat([y.view(-1) for (x, y) in self.model.named_parameters() if x != 'bias'])
         penalty = torch.norm(all_params, 2).pow(2) / 2 / n
-        return loss + .5 * penalty / c
+        return loss + .5/c * penalty
 
     def fit(
         self,
@@ -448,7 +449,8 @@ class TorchBasedLinearEstimator:
         """Inference phase.
 
         Args:
-            data: Data to test.
+            data: Data to test,
+            dev_id: GPU device id.
 
         Returns:
             Predicted target values.
@@ -456,7 +458,8 @@ class TorchBasedLinearEstimator:
         """
         data, data_cat = self._prepare_data(data, dev_id)
         res = self._score(data, data_cat)
-        return(res)
+        return res
+
 
 class TorchBasedLogisticRegression(TorchBasedLinearEstimator):
     """Linear binary classifier."""
@@ -516,13 +519,14 @@ class TorchBasedLogisticRegression(TorchBasedLinearEstimator):
         if loss is None:
             loss = TorchLossWrapper(_loss)
         super().__init__(data_size, categorical_idx, embed_sizes, output_size, cs, max_iter, tol, early_stopping, loss, metric)
-        self.model = _model(self.data_size - len(self.categorical_idx), self.embed_sizes, self.output_size).cuda()
+        self.model = _model(self.data_size - len(self.categorical_idx['int']), self.embed_sizes, self.output_size).cuda()
 
     def predict(self, data: cp.ndarray, dev_id: int = 0) -> cp.ndarray:
         """Inference phase.
 
         Args:
-            data: data to test.
+            data: data to test,
+            dev_id: GPU device id.
 
         Returns:
             predicted target values.
@@ -594,7 +598,7 @@ class TorchBasedLinearRegression(TorchBasedLinearEstimator):
             metric
         )
         self.model = CatRegression(
-            self.data_size - len(self.categorical_idx),
+            self.data_size - len(self.categorical_idx['int']),
             self.embed_sizes,
             self.output_size
         ).cuda()
@@ -603,7 +607,8 @@ class TorchBasedLinearRegression(TorchBasedLinearEstimator):
         """Inference phase.
 
         Args:
-            data: data to test.
+            data: data to test,
+            dev_id: GPU device id.
 
         Returns:
             predicted target values.

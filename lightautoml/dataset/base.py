@@ -1,6 +1,6 @@
 """Contains base classes for internal dataset interface."""
 
-from copy import copy  # , deepcopy
+from copy import copy, deepcopy
 from typing import Any
 from typing import Dict
 from typing import List
@@ -462,7 +462,6 @@ class LAMLDataset:
 
         data = cls._hstack(data)
         dataset.set_data(data, features, roles)
-
         return dataset
 
     def drop_features(self, droplist: Sequence[str]):

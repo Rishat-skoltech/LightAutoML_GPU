@@ -126,7 +126,6 @@ class HybridReader(CudfReader):
             cpu_num_cols = 0
 
         print("READER:")
-        print("  output is:", self.output)
         print("  num_gpu_readers:", self.num_gpu_readers)
         print("  num_cpu_readers:", self.num_cpu_readers)
 
@@ -177,8 +176,8 @@ class HybridReader(CudfReader):
         if num_readers > 1:
             with Parallel(n_jobs=num_readers, prefer='processes',
                           backend='loky', max_nbytes=None) as p:
-            #with Parallel(n_jobs=num_readers, prefer='threads', max_nbytes=None) as p:
                 output = p(delayed(call_reader)(reader, train_data[name], target=train_data[self.target]) for (reader, name) in zip(readers, names))
+                #output = ((call_reader)(reader, train_data[name], target=train_data[self.target]) for (reader, name) in zip(readers, names))
         else:
             output.append(call_reader(readers[0], train_data[names[0]], target=train_data[self.target]))
 
@@ -194,6 +193,8 @@ class HybridReader(CudfReader):
 
 
         self.final_roles.update({self.target: 'target'})
+
+        print("self output is", self.output, flush=True)
         if self.output == 'gpu':
             self.final_reader = CudfReader(self.task, 0, *self.args, **self.params, n_jobs = self.n_jobs, advanced_roles=False)
         elif self.output == 'cpu':

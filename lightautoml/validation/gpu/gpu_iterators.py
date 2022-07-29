@@ -17,6 +17,7 @@ from lightautoml.validation.base import HoldoutIterator
 from lightautoml.validation.base import TrainValidIterator
 
 
+
 GpuDataset = Union[CupyDataset, CudfDataset, DaskCudfDataset]
 
 class HoldoutIterator_gpu(HoldoutIterator):
@@ -32,7 +33,7 @@ class HoldoutIterator_gpu(HoldoutIterator):
         """
         self.train = train
         self.valid = valid
-
+       
     def __len__(self) -> Optional[int]:
         """Get 1 len.
 
@@ -49,6 +50,7 @@ class HoldoutIterator_gpu(HoldoutIterator):
             Iterable object for train validation dataset.
 
         """
+        
         return iter([(None, self.train, self.valid)])
 
     def __getitem__(self, number):
@@ -107,6 +109,7 @@ class FoldsIterator_gpu(TrainValidIterator):
             raise IndexError('index out of range')
         
         val_idx = (self.train.folds == number)
+
         if type(self.train) == CudfDataset:
             val_idx = val_idx.values
         elif type(self.train) == DaskCudfDataset:
@@ -122,7 +125,6 @@ class FoldsIterator_gpu(TrainValidIterator):
         train, valid = self.train[tr_idx], self.train[val_idx]
 
         return val_idx, cast(GpuDataset, train), cast(GpuDataset, valid)
-       
 
     def __next__(self) -> Tuple[cp.ndarray, GpuDataset, GpuDataset]:
         """Define how to get next object.
@@ -134,11 +136,14 @@ class FoldsIterator_gpu(TrainValidIterator):
 
         if self._curr_idx == self.n_folds:
             raise StopIteration
+        
         val_idx = (self.train.folds == self._curr_idx)
+        
         if type(self.train) == CudfDataset:
             val_idx = val_idx.values
         elif type(self.train) == DaskCudfDataset:
             val_idx = val_idx.compute().values
+        
         tr_idx = cp.logical_not(val_idx)
         idx = cp.arange(self.train.shape[0])
         tr_idx, val_idx = idx[tr_idx], idx[val_idx]
@@ -176,6 +181,7 @@ class FoldsIterator_gpu(TrainValidIterator):
 
         tr_idx = cp.logical_not(val_idx)
         idx = cp.arange(self.train.shape[0])
+        
         tr_idx, val_idx = idx[tr_idx], idx[val_idx]
         if type(self.train) == DaskCudfDataset:
             tr_idx = tr_idx.get()
@@ -220,5 +226,5 @@ def get_gpu_iterator(
         train_valid = FoldsIterator_gpu(train, n_folds)
     else:
         train_valid = DummyIterator(train)
-
+    
     return train_valid

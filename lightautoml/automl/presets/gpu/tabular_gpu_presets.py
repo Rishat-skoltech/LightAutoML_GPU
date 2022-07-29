@@ -10,7 +10,11 @@ from typing import Optional
 from typing import Sequence
 from typing import Union
 
-import cupy as cp
+try:
+    import cupy as cp
+except:
+    print("GPU version is not installed or no GPUs detected. Reinstall your library or switch to CPU preset.")
+    exit(-1)
 import torch
 
 from pandas import DataFrame
@@ -40,7 +44,8 @@ from lightautoml.pipelines.selection.permutation_importance_based import (
 from lightautoml.pipelines.selection.permutation_importance_based import (
     NpPermutationImportanceEstimator,
 )
-from lightautoml.reader.gpu.hybrid_reader import HybridReader
+from lightautoml.reader.gpu.cudf_reader import CudfReader
+from lightautoml.reader.gpu.daskcudf_reader import DaskCudfReader
 from lightautoml.reader.tabular_batch_generator import ReadableToDf
 from lightautoml.reader.tabular_batch_generator import read_batch
 from lightautoml.reader.tabular_batch_generator import read_data
@@ -102,8 +107,6 @@ class TabularAutoML_gpu(TabularAutoML):
         TBA
         """
         super(TabularAutoML_gpu.__bases__[0], self).__init__(task, timeout, memory_limit, cpu_limit, gpu_ids, timing_params, config_path)
-
-        print("setting gpuids with", gpu_ids)
 
         # upd manual params
         for name, param in zip(
@@ -246,7 +249,6 @@ class TabularAutoML_gpu(TabularAutoML):
         if not self.linear_l2_params["parallel_folds"] and self.task.device=="mgpu":
             self.reader_params["output"] = "mgpu"
 
-
     def get_time_score(self, n_level: int, model_type: str, nested: Optional[bool] = None):
 
         if nested is None:
@@ -345,9 +347,12 @@ class TabularAutoML_gpu(TabularAutoML):
 
         return pre_selector
 
-    def get_linear(self, n_level: int = 1, pre_selector: Optional[SelectionPipeline] = None) -> NestedTabularMLPipeline:
+    def get_linear(
+            self,
+            n_level: int = 1,
+            pre_selector: Optional[SelectionPipeline] = None
+    ) -> NestedTabularMLPipeline:
 
-        # linear model with l2
         time_score = self.get_time_score(n_level, "linear_l2")
         linear_l2_timer = self.timer.get_task_timer("reg_l2", time_score)
         linear_l2_model = LinearLBFGS_gpu(timer=linear_l2_timer, **self.linear_l2_params)
@@ -381,7 +386,6 @@ class TabularAutoML_gpu(TabularAutoML):
             if algo_key == "cb":
                 gbm_model = BoostCB_gpu(timer=gbm_timer, **self.cb_params)
             elif algo_key == "xgb":
-                #gbm_model = BoostXGB(timer=gbm_timer, **self.xgb_params)
                 if self.task.device == "mgpu" and not self.xgb_params["parallel_folds"]:
                     gbm_model = BoostXGB_dask(client=self.client, timer=gbm_timer, **self.xgb_params)
                 else:
@@ -407,7 +411,6 @@ class TabularAutoML_gpu(TabularAutoML):
                     raise ValueError("Wrong algo key")
                
                 if folds:
-                    
                     gbm_tuner = OptunaTuner_gpu(ngpus = gpu_cnt,
                         gpu_queue = GpuQueue(ngpus = gpu_cnt),
                         n_trials=self.tuning_params["max_tuning_iter"],
@@ -442,8 +445,15 @@ class TabularAutoML_gpu(TabularAutoML):
         multilevel_avail = fit_args["valid_data"] is None and fit_args["cv_iter"] is None
 
         self.infer_auto_params(train_data, multilevel_avail)
+        num_data = train_data.shape[0] * train_data.shape[1]
 
-        reader = HybridReader(task=self.task, **self.reader_params)
+        if num_data < 1e8 or self.task.device == 'gpu':
+            reader = CudfReader(task=self.task, **self.reader_params)
+        else:
+            if self.task.device != 'cpu':
+                reader = DaskCudfReader(task=self.task, **self.reader_params)
+            else:
+                raise ValueError("Device must be either gpu or mgpu to run on GPUs")
 
         pre_selector = self.get_selector()
 
@@ -539,7 +549,13 @@ class TabularAutoML_gpu(TabularAutoML):
         if valid_data is not None:
             data, _ = read_data(valid_data, valid_features, self.cpu_limit, self.read_csv_params)
 
-        oof_pred = super(TabularAutoML_gpu.__bases__[0], self).fit_predict(train, roles=roles, cv_iter=cv_iter, valid_data=valid_data, verbose=verbose)
+        oof_pred = super(TabularAutoML_gpu.__bases__[0], self).fit_predict(
+            train,
+            roles=roles,
+            cv_iter=cv_iter,
+            valid_data=valid_data,
+            verbose=verbose
+        )
 
         return oof_pred.to_numpy()
 

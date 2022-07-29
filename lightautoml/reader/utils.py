@@ -5,9 +5,12 @@ from typing import Optional
 from typing import Union
 
 import numpy as np
-import cupy as cp
-import cudf
-import dask_cudf
+try:
+    import cupy as cp
+    import cudf
+    import dask_cudf
+except ModuleNotFoundError:
+    print("Warning: GPU is not supported on this machine")
 
 from sklearn.model_selection import GroupKFold
 from sklearn.model_selection import KFold

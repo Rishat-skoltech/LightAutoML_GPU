@@ -7,7 +7,7 @@ import cupy as cp
 import cudf
 import dask_cudf
 
-from ..tasks import Task
+from ...tasks import Task
 
 GpuSeries = Union[cp.ndarray, cudf.Series, dask_cudf.Series]
 
