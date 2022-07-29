@@ -23,6 +23,7 @@ from lightautoml.tasks.losses import TorchLossWrapper
 logger = logging.getLogger(__name__)
 ArrayOrSparseMatrix = Union[cp.ndarray, sparse_cupy.spmatrix]
 
+
 def convert_cupy_scipy_sparse_to_torch_float(matrix: sparse_cupy.spmatrix, dev_id: int) -> torch.Tensor:
     """Convert scipy sparse matrix to torch sparse tensor (GPU version).
 
@@ -357,9 +358,7 @@ class TorchBasedLinearEstimator:
             n = weights.sum()
 
         all_params = torch.cat([y.view(-1) for (x, y) in self.model.named_parameters() if x != 'bias'])
-        #print("AP device:", all_params.device)
         penalty = torch.norm(all_params, 2).pow(2) / 2 / n
-        #print("Penalty device:", penalty.device)
         return loss + .5/c * penalty
 
     def fit(
@@ -450,7 +449,8 @@ class TorchBasedLinearEstimator:
         """Inference phase.
 
         Args:
-            data: Data to test.
+            data: Data to test,
+            dev_id: GPU device id.
 
         Returns:
             Predicted target values.
@@ -458,7 +458,8 @@ class TorchBasedLinearEstimator:
         """
         data, data_cat = self._prepare_data(data, dev_id)
         res = self._score(data, data_cat)
-        return(res)
+        return res
+
 
 class TorchBasedLogisticRegression(TorchBasedLinearEstimator):
     """Linear binary classifier."""
@@ -524,7 +525,8 @@ class TorchBasedLogisticRegression(TorchBasedLinearEstimator):
         """Inference phase.
 
         Args:
-            data: data to test.
+            data: data to test,
+            dev_id: GPU device id.
 
         Returns:
             predicted target values.
@@ -605,7 +607,8 @@ class TorchBasedLinearRegression(TorchBasedLinearEstimator):
         """Inference phase.
 
         Args:
-            data: data to test.
+            data: data to test,
+            dev_id: GPU device id.
 
         Returns:
             predicted target values.

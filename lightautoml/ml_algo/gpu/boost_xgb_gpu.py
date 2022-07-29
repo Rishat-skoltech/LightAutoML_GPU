@@ -381,7 +381,6 @@ class BoostXGB_dask(BoostXGB):
 
         params, num_trees, early_stopping_rounds, verbose_eval, fobj, feval = self._infer_params()
 
-
         train_target, train_weight = self.task.losses['xgb'].fw_func(train.target, train.weights)
         valid_target, valid_weight = self.task.losses['xgb'].fw_func(valid.target, valid.weights)
 
@@ -391,7 +390,6 @@ class BoostXGB_dask(BoostXGB):
 
             train_target = dask_cudf.from_cudf(cudf.Series(train_target), npartitions=torch.cuda.device_count())
             valid_target = dask_cudf.from_cudf(cudf.Series(valid_target), npartitions=torch.cuda.device_count())
-
 
         xgb_train = dxgb.DaskDeviceQuantileDMatrix(self.client, train.data, label=train_target, weight=train_weight)
         xgb_valid = dxgb.DaskDeviceQuantileDMatrix(self.client, valid.data, label=valid_target, weight=valid_weight)

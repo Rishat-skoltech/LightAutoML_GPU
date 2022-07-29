@@ -127,12 +127,6 @@ class AutoML:
               input features to next levels.
             return_all_predictions: True if we should return all predictions from last
               level models.
-            verbose: Controls the verbosity: the higher, the more messages.
-                <1  : messages are not displayed;
-                >=1 : the computation process for layers is displayed;
-                >=2 : the information about folds processing is also displayed;
-                >=3 : the hyperparameters optimization process is also displayed;
-                >=4 : the training process for every algorithm is displayed;
 
         """
         assert len(levels) > 0, "At least 1 level should be defined"
@@ -179,7 +173,12 @@ class AutoML:
             valid_data: Optional validation dataset.
             valid_features: Optional validation dataset
               features if can't be inferred from `valid_data`.
-
+            verbose: Controls the verbosity: the higher, the more messages.
+                <1  : messages are not displayed;
+                >=1 : the computation process for layers is displayed;
+                >=2 : the information about folds processing is also displayed;
+                >=3 : the hyperparameters optimization process is also displayed;
+                >=4 : the training process for every algorithm is displayed;
         Returns:
             Predicted values.
 

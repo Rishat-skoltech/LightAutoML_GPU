@@ -76,7 +76,7 @@ class TorchBasedLinearEstimator:
         size_base = data.shape[0] // size
         residue = int(data.shape[0] % size)
         offset = size_base * ind + min(ind, residue)
-        
+
         if type(data) == cp.ndarray:
             data = data[offset:offset + size_base + int(residue > ind), :]
         else:
@@ -88,7 +88,7 @@ class TorchBasedLinearEstimator:
             else:
                 y = cp.copy(y[offset:offset + size_base + int(residue > ind)])
             y = torch.as_tensor(y.astype(cp.float32), device=device_id)
-        
+
         if weights is not None:
 
             if type(weights) != cp.ndarray:
@@ -97,26 +97,29 @@ class TorchBasedLinearEstimator:
                 weights = cp.copy(weights[offset:offset + size_base + int(residue > ind)])
 
             weights = torch.as_tensor(weights.astype(cp.float32), device=device_id)
-        
+
         if 0 < len(categorical_idx) < data.shape[1]:
-            
+
             if type(data) is cp.ndarray:
-                
-                data_cat = torch.as_tensor(data[:, self.categorical_idx['int']].astype(cp.int32), 
+
+                data_cat = torch.as_tensor(data[:, self.categorical_idx['int']].astype(cp.int32),
                                            device=device_id)
                 data_ = torch.as_tensor(data[:, np.setdiff1d(np.arange(data.shape[1]),
-                                                            self.categorical_idx['int'])]\
-                                                           .astype(cp.float32), device=device_id)
-            
+                                                             self.categorical_idx['int'])]
+                                        .astype(cp.float32), device=device_id)
+
             else:
                 data_cat = torch.as_tensor(
                     data[categorical_idx].values.astype(cp.int32),
-                    device=device_id)
+                    device=device_id
+                )
                 data_ = torch.as_tensor(
-                    data[data.columns.difference(self.categorical_idx['str'])] \
-                        .values.astype(cp.float32),
-                    device=device_id)
-                
+                    data[
+                        data.columns.difference(self.categorical_idx['str'])
+                    ].values.astype(cp.float32),
+                    device=device_id
+                )
+
             return data_, data_cat, y, weights
 
         elif len(self.categorical_idx['int']) == 0:
@@ -130,11 +133,10 @@ class TorchBasedLinearEstimator:
         else:
             if type(data) is cp.ndarray:
                 data_cat = torch.as_tensor(data.astype(cp.int32), device=device_id)
-                
+
             else:
                 data_cat = torch.as_tensor(data.values.astype(cp.int32), device=device_id)
             return None, data_cat, y, weights
-
 
     def __init__(
             self,
@@ -240,7 +242,7 @@ class TorchBasedLinearEstimator:
         def closure():
             opt.zero_grad(set_to_none=True)
             output = model(data, data_cat)
-            
+
             loss = self._loss_fn(model, y.reshape(-1, 1), output, weights, c)
             if loss.requires_grad:
                 loss.backward()
@@ -268,7 +270,7 @@ class TorchBasedLinearEstimator:
             Loss+Regularization value.
 
         """
-        
+
         loss = self.loss(y_true, y_pred, sample_weight=weights)
 
         n = y_true.shape[0]
@@ -294,42 +296,40 @@ class TorchBasedLinearEstimator:
         data_cats = []
         y_slices = []
         weights_slices = []
-        
+
         data_slices_val = []
         data_cats_val = []
         y_slices_val = []
         weights_slices_val = []
-        
+
         for i in range(len(self.gpu_ids)):
-            data_slice, data_cat, y_slice, weights_slice = self._prepare_data(data, 
-                                                                              y, 
-                                                                              weights, 
+            data_slice, data_cat, y_slice, weights_slice = self._prepare_data(data,
+                                                                              y,
+                                                                              weights,
                                                                               i)
-            data_val_slice, data_val_cat_slice, y_val_slice, weights_val_slice = self._prepare_data(data_val, 
-                                                                            y_val, 
-                                                                            weights_val, 
-                                                                            i)
+            data_val_slice, data_val_cat_slice, y_val_slice, weights_val_slice = self._prepare_data(data_val,
+                                                                                                    y_val,
+                                                                                                    weights_val,
+                                                                                                    i)
             data_slices.append(data_slice)
             data_cats.append(data_cat)
             y_slices.append(y_slice)
             weights_slices.append(weights_slice)
-            
+
             data_slices_val.append(data_val_slice)
             data_cats_val.append(data_val_cat_slice)
             y_slices_val.append(y_val_slice)
             weights_slices_val.append(weights_val_slice)
-        
-        
+
         for c in self.cs:
             res = []
             models = []
             for i in range(len(self.gpu_ids)):
                 models.append(deepcopy(self.model.to(f'cuda:{i}')))
-            
+
             for i in range(len(self.gpu_ids)):
                 self._optimize(models[i], data_slices[i], data_cats[i], y_slices[i], weights_slices[i], c)
-                
-                
+
             new_state_dict = OrderedDict()
             for i, it in enumerate(models):
                 it = it.state_dict()
@@ -339,22 +339,22 @@ class TorchBasedLinearEstimator:
                 else:
                     for k in it.keys():
                         new_state_dict[k.replace('module.', '')] += it[k].clone().to('cuda:0')
-            
+
             for k in new_state_dict.keys():
-                new_state_dict[k] = new_state_dict[k]/float(len(self.gpu_ids))
+                new_state_dict[k] = new_state_dict[k] / float(len(self.gpu_ids))
 
             self.model.to('cuda').load_state_dict(new_state_dict)
-            
+
             scores = np.zeros(len(self.gpu_ids))
 
             for i in range(len(self.gpu_ids)):
                 model = self.model.to(f'cuda:{i}')
                 val_pred = self._score(model, data_slices_val[i], data_cats_val[i])
-                # TODO: check if this conversion is necessary
+
                 scores[i] = cp.asnumpy(
                     self.metric(cp.asarray(y_slices_val[i]), val_pred, weights_slices_val[i])
                 )
-                
+
             score = scores.mean()
             print("Score:", score)
             if score > best_score:
@@ -365,7 +365,6 @@ class TorchBasedLinearEstimator:
                 es += 1
             if es >= self.early_stopping:
                 break
-            #[torch.cuda.synchronize(device=f'cuda:{i}') for i in range(len(self.gpu_ids))]
 
         self.model.to('cuda').load_state_dict(best_model_params)
         return self
@@ -443,15 +442,15 @@ class TorchBasedLogisticRegression(TorchBasedLinearEstimator):
         """Inference phase.
 
         Args:
-            data: data to test.
+            data: data to test,
+            dev_id: GPU device id.
 
         Returns:
             predicted target values.
 
         """
         pred = super().predict(data)
-        # if self._binary:
-        #    pred = pred[:, 0]
+
         return pred
 
 
@@ -528,11 +527,11 @@ class TorchBasedLinearRegression(TorchBasedLinearEstimator):
         """Inference phase.
 
         Args:
-            data: data to test.
+            data: data to test,
+            dev_id: GPU device id.
 
         Returns:
             predicted target values.
 
         """
         return super().predict(data)
-

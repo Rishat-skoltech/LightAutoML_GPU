@@ -228,12 +228,6 @@ class BoostCB_gpu(TabularMLAlgo_gpu, ImportanceEstimator):
                 high=10.0,
             )
 
-            # optimization_search_space['bagging_temperature'] = trial.suggest_loguniform(
-            #     name='bagging_temperature',
-            #     low=0.01,
-            #     high=10.0,
-            # )
-
         if estimated_n_trials > 50:
             optimization_search_space["min_data_in_leaf"] = SearchSpace(Distribution.INTUNIFORM, low=1, high=20)
 
@@ -319,8 +313,6 @@ class BoostCB_gpu(TabularMLAlgo_gpu, ImportanceEstimator):
 
         model.fit(cb_train, eval_set=cb_valid)
 
-        #print("Before predict")
-        #print(type(valid))
         val_pred = self._predict(model, cb_valid, params)
         return model, val_pred
 
@@ -379,20 +371,17 @@ class BoostCB_gpu(TabularMLAlgo_gpu, ImportanceEstimator):
                 pool,
                 prediction_type='Probability',
                 thread_count=params['thread_count'],
-                #task_type='GPU'
             )
         elif self.task.name == 'binary':
             pred = model.predict(
                 pool,
                 prediction_type='Probability',
                 thread_count=params['thread_count'],
-                #task_type='GPU'
             )[..., 1]
         elif self.task.name == 'reg':
             pred = model.predict(
                 pool,
                 thread_count=params['thread_count'],
-                #task_type='GPU'
             )
 
         pred = self.task.losses['cb'].bw_func(pred)
