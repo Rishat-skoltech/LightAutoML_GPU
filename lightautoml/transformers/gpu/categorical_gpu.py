@@ -173,6 +173,7 @@ class LabelEncoder_gpu(LAMLTransformer):
         data = self.encode_labels(data)
         data = data.astype(cp.float64)
         data = data.fillna(cp.nan).values
+
         output = dataset.empty().to_cupy()
         output.set_data(data, self.features, self._output_role)
         return output
@@ -186,6 +187,7 @@ class LabelEncoder_gpu(LAMLTransformer):
 
         output = dataset.empty()
         output.set_data(data, self.features, self._output_role)
+
         return output
 
     def transform(self, dataset: GpuNumericalDataset) -> GpuNumericalDataset:
