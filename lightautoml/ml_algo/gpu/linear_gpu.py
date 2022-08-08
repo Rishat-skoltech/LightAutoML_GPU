@@ -21,6 +21,7 @@ from cuml.dask.linear_model import ElasticNet as daskElasticNet
 
 from lightautoml.ml_algo.torch_based.gpu.linear_model_distributed import TorchBasedLogisticRegression as TLR_dask
 from lightautoml.ml_algo.torch_based.gpu.linear_model_distributed import TorchBasedLinearRegression as TLinR_dask
+from ..torch_based.linear_model import TorchBasedLinearRegression as TLinR_CPU, TorchBasedLogisticRegression as TLR_CPU
 
 import dask.array as da
 
@@ -34,6 +35,9 @@ from lightautoml.dataset.gpu.gpu_dataset import CupyDataset
 from lightautoml.dataset.gpu.gpu_dataset import DaskCudfDataset
 
 from lightautoml.validation.base import TrainValidIterator
+
+from ..linear_sklearn import LinearLBFGS
+from ...tasks.base import Task
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +125,37 @@ class LinearLBFGS_gpu(TabularMLAlgo_gpu):
         else:
             raise ValueError('Task not supported')
         return model
+
+    def to_cpu(self):
+
+        models = [TLR_CPU(data_size=self.models[i].data_size,
+                          categorical_idx=self.models[i].categorical_idx,
+                          embed_sizes=cp.asnumpy(self.models[i].embed_sizes),
+                          output_size=self.models[i].output_size,
+                          cs=self.models[i].cs) for i in range(len(self.models))]
+        print(self.models[0].__dict__)
+        for i in range(len(models)):
+            models[i].model = deepcopy(self.models[i].model.cpu())
+            models[i].loss = deepcopy(self.models[i].loss.cpu())
+            models[i].metric = None
+        print(self.models[0].__class__.__name__)
+
+        print(self.task.__dict__)
+
+        algo = LinearLBFGS(default_params=self.default_params,
+                           freeze_defaults=self.freeze_defaults,
+                           timer=self.timer)
+        algo.task = Task(name=self.task._name,
+                         device='cpu',
+                         metric=self.task.metric_name,
+                         greater_is_better=self.task.greater_is_better)
+        algo.models = deepcopy(models)
+        algo._features = self._features
+        algo._nan_rate = self._nan_rate
+        algo._name = self._name
+        algo._params = deepcopy(self._params)
+        print(algo.models[0].model._parameters['bias'].device)
+        return algo
 
     def init_params_on_input(self, train_valid_iterator: TrainValidIterator) -> dict:
 

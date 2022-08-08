@@ -1,5 +1,5 @@
 """Blenders (GPU version)."""
-
+import copy
 import logging
 
 from typing import List
@@ -77,6 +77,17 @@ class WeightedBlender_gpu(WeightedBlender):
     Model with low weights will be pruned.
 
     """
+
+    def to_cpu(self):
+        wts = copy.deepcopy(cp.asnumpy(self.wts))
+        blender = WeightedBlender(max_iters=self.max_iters,
+                                  max_inner_iters=self.max_inner_iters,
+                                  max_nonzero_coef=self.max_nonzero_coef)
+        blender.wts = wts
+        blender._outp_dim = self._outp_dim
+        blender._outp_prob = self._outp_prob
+        return blender
+
     def _get_weighted_pred(self, splitted_preds: Sequence[GpuDataset],
                            wts: Optional[cp.ndarray]) -> GpuDataset:
         length = len(splitted_preds)

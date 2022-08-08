@@ -101,6 +101,16 @@ class AutoML:
         """
         self._initialize(reader, levels, timer, blender, skip_conn, return_all_predictions)
 
+    def to_cpu(self):
+        print(self.__class__.__name__)
+        self.reader = self.reader.to_cpu()
+
+        self.blender = self.blender.to_cpu()
+
+        for i in range(len(self.levels)):
+            for j in range(len(self.levels[i])):
+                self.levels[i][j] = self.levels[i][j].to_cpu()
+
     def _initialize(
         self,
         reader: Reader,
