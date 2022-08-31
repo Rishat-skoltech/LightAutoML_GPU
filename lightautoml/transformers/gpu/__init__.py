@@ -4,7 +4,9 @@ try:
     "categorical_gpu",
     "datetime_gpu",
     "decomp_gpu",
-    "numeric_gpu"
+    "numeric_gpu",
+    "svd_utils_gpu",
+    "text_gpu"
     ]
 except:
     pass
